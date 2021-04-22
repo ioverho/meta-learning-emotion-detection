@@ -130,3 +130,4 @@ MNIST
 
 # Ivos ignore
 klad*.py
+data/datasets
