@@ -59,8 +59,8 @@ class UnifiedMetaStratifiedLoader():
             return labels, text
         else:
             encoded = self.tokenizer(text, padding=True, return_tensors="pt")
-            text = encoded['input_ids'].T
-            mask = encoded['attention_mask'].T
+            text = encoded['input_ids']
+            mask = encoded['attention_mask']
 
             labels = torch.LongTensor(labels)
 
