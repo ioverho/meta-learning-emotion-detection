@@ -133,3 +133,6 @@ class unified_emotion():
                 data_loaders.append(dataloader)
 
         return data_loaders
+
+    def __getitem__(self, i):
+        return self.datasets.get(i, None)
