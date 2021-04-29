@@ -9,7 +9,7 @@ class unified_emotion():
     """Class for the 'Unified Emotion Dataset'. Data from https://github.com/sarnthil/unify-emotion-datasets.
     """
 
-    def __init__(self, file_path, exclude=['fb-valence-arousal-anon', 'emobank', 'affectivetext', 'emotion-cause', 'electoraltweets'], split_ratio=0.8):
+    def __init__(self, file_path, include=None, exclude=['fb-valence-arousal-anon', 'emobank', 'affectivetext', 'emotion-cause', 'electoraltweets', 'ssec', 'tales-emotions'], split_ratio=0.8):
         """
         Class for the 'Unified Emotion Dataset'.
         Data from https://github.com/sarnthil/unify-emotion-datasets.
@@ -19,11 +19,11 @@ class unified_emotion():
             - emotiondata-aman, 15k sents, 7 labels
             - grounded_emotions, 2.5k tweets, 2 labels
             - isear, 3000 docs, 7 labels
-            - tales-emotions, 15k sents, 8 labels
             - emoint
 
         Args:
             file_path (str): path to the 'unified-dataset.jsonl' file
+            include (list, optional): if not None, will only use the datasets in the include list. Defaults to None
             exclude (list, optional): tasks to exclude. Defaults to ['fb-valence-arousal-anon', 'emobank', 'affectivetext', 'emotion-cause', 'electoraltweets'].
             split_ratio (float, optional): amount of data reserved for test sets. Defaults to 0.8.
         """
@@ -59,6 +59,10 @@ class unified_emotion():
                 label = label_map[source][max(labels, key=labels.get)]
 
                 text = text_tokenizer(line['text'])
+                if text == None:
+                    continue
+                if isinstance(text, list):
+                    text = ' '.join(text)
 
                 datasets[source][split][label].append({'idx': id, 'labels': label, 'text': text})
                 source_lengths[source] = id + 1
