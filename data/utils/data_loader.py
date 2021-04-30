@@ -4,7 +4,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 
-class UnifiedMetaStratifiedLoader():
+class MetaStratifiedLoader():
     def __init__(self, source_dict, split, class_to_int, k, tokenizer, shuffle):
         """
         Class that acts as dataloader.

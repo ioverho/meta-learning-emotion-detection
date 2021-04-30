@@ -3,7 +3,7 @@ from collections import defaultdict
 import torch
 import jsonlines
 
-from data.unified_emotion.unified_stratified_loader import UnifiedMetaStratifiedLoader
+from data.utils.data_loader import MetaStratifiedLoader
 
 class unified_emotion():
     """Class for the 'Unified Emotion Dataset'. Data from https://github.com/sarnthil/unify-emotion-datasets.
@@ -31,7 +31,7 @@ class unified_emotion():
         self.exclude = exclude
         self.split_ratio = split_ratio
 
-    def prep(self, text_tokenizer=lambda x: x):
+    def prep(self, text_tokenizer=lambda x: x, text_tokenizer_kwargs=dict()):
         """Generates dataset from unified file.
 
         Args:
@@ -58,7 +58,7 @@ class unified_emotion():
                     label_map[source] = {k: i for i, (k, _) in enumerate(labels.items())}
                 label = label_map[source][max(labels, key=labels.get)]
 
-                text = text_tokenizer(line['text'])
+                text = text_tokenizer(line['text'], **text_tokenizer_kwargs)
                 if text == None:
                     continue
                 if isinstance(text, list):
@@ -87,29 +87,9 @@ class unified_emotion():
         """
         return self.source_lengths
 
-    def get_dataloaders_all(self, k=4, tokenizer=None):
-        trainloaders = []
-        testloaders = []
-        for source in self.datasets.keys():
-            for split in self.datasets[source].keys():
-                source_dict = self.datasets[source]
-                dataloader = UnifiedMetaStratifiedLoader(source_dict=source_dict,
-                                                         split=split,
-                                                         class_to_int=self.label_map[source],
-                                                         k=k,
-                                                         tokenizer=tokenizer
-                                                         )
-
-                if split == 'train':
-                    trainloaders.append((source, dataloader))
-                else:
-                    testloaders.append((source, dataloader))
-
-        return trainloaders, testloaders
-
     def get_dataloader(self, source_name,  k=4, tokenizer=None, shuffle=True):
         """Generates a dataloader from a specified dataset.
-        See UnifiedMetaStratifiedLoader for more.
+        See MetaStratifiedLoader for more.
 
         Args:
             source_name (str): a dataset from one of the processed ones.
@@ -123,13 +103,13 @@ class unified_emotion():
         data_loaders = []
         for split in self.datasets[source_name].keys():
             source_dict = self.datasets[source_name]
-            dataloader = UnifiedMetaStratifiedLoader(source_dict=source_dict,
-                                                        split=split,
-                                                        class_to_int=self.label_map[source_name],
-                                                        k=k,
-                                                        tokenizer=tokenizer,
-                                                        shuffle=shuffle if split=='train' else False
-                                                        )
+            dataloader = MetaStratifiedLoader(source_dict=source_dict,
+                                              split=split,
+                                              class_to_int=self.label_map[source_name],
+                                              k=k,
+                                              tokenizer=tokenizer,
+                                              shuffle=shuffle if split=='train' else False
+                                              )
 
             if split == 'train':
                 data_loaders.insert(0, dataloader)

@@ -2,13 +2,11 @@ import re
 
 import emoji
 import spacy
-from transformers import AutoTokenizer
 
 nlp = spacy.load('en_core_web_sm')
-bert_tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
 
 
-def manual_tokenizer(text, bert_vocab=None, OOV_cutoff=0.5):
+def manual_tokenizer(text, bert_vocab=None, OOV_cutoff=0.5, verbose=False):
 
     # Ensure proper encoding
     try:
@@ -22,7 +20,7 @@ def manual_tokenizer(text, bert_vocab=None, OOV_cutoff=0.5):
 
     norm_sent = ""
     OOV_count, total = 0, 0
-    for i, t in enumerate(nlp.tokenizer(txt)):
+    for t in nlp.tokenizer(txt):
 
         norm_token = t.norm_
 
@@ -49,13 +47,15 @@ def manual_tokenizer(text, bert_vocab=None, OOV_cutoff=0.5):
             # Hopefully avoids non-English tweets
             if (not (norm_token in bert_vocab)):
                 OOV_count += 1
-            total += 1
+        total += 1
 
         norm_sent += norm_token + " "
 
-    if bert_vocab != None:
+    if total > 0 and bert_vocab != None:
         if OOV_count / total >= OOV_cutoff:
-            print('Removed sentence for too many OOV terms.')
+            if verbose:
+                print('Removed sentence for too many OOV terms.')
+                print(f'{norm_sent}')
             return None
     # Remove double whitespaces and trailing
     norm_sent = re.sub('\s{2,}', ' ', norm_sent)[:-1]
