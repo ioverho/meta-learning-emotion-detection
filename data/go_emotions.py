@@ -70,6 +70,7 @@ class go_emotions():
         label_map["remorse"] = 24
         label_map["sadness"] = 25
         label_map["surprise"] = 26
+        inv_label_map = {v: k for k, v in label_map.items()}
 
 
         for set in [('train', train_set), ('validation', dev_set), ('test', test_set)]:
@@ -91,7 +92,7 @@ class go_emotions():
                         datasets['go_emotions'][split_name][label].append({'idx': (id + label_idx), 'labels': label, 'text': text})
                     source_lengths['go_emotions'] = id + len(labels)
                 else:
-                    label = labels[0]
+                    label = inv_label_map[labels[0]]
                     source_lengths['go_emotions'] = id + 1
 
                 datasets['go_emotions'][split_name][label].append({'idx': id, 'labels': label, 'text': text})
