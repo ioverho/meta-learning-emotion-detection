@@ -89,6 +89,7 @@ class go_emotions():
                 labels = instance['labels']
                 if (len(labels) > 1) and not self.first_label_only:
                     for label_idx, label in enumerate(labels):
+                        label = inv_label_map[label]
                         datasets['go_emotions'][split_name][label].append({'idx': (id + label_idx), 'labels': label, 'text': text})
                     source_lengths['go_emotions'] = id + len(labels)
                 else:
