@@ -18,10 +18,10 @@ Conference
 -->
 </div>
 
-## Data loade example
+## Data loader example
 Download unified dataset and put in ./data/datasets: https://drive.google.com/file/d/1y7yjshepNRPhnh-Qz5MTRbnopGn7KzUm/view?usp=sharing Originally from: https://github.com/sarnthil/unify-emotion-datasets
 
-Play round in dataloader_example.ipynb
+Play around in dataloader_example.ipynb
 
 ## Description
 What it does

@@ -1,10 +1,12 @@
+import re
+
 import torch
 import torch.nn as nn
-from transformers import BertConfig, BertModel
+from transformers import AutoModel
 
-class BertSequence(nn.Module):
+class TransformerEncoder(nn.Module):
 
-    def __init__(self, name, config, nu):
+    def __init__(self, name, nu):
         """BERT transformer for sequence classification.
 
         Args:
@@ -16,17 +18,18 @@ class BertSequence(nn.Module):
         super().__init__()
 
         self.name = name
-        self.config = config
         self.nu = nu
 
-        self.model = BertModel.from_pretrained(self.name, config=self.config)
+        self.model = AutoModel.from_pretrained(name)
 
-        for param in self.model.base_model.embeddings.parameters():
-            param.requires_grad = False
+        for name, param in self.model.named_parameters():
 
-        for name, param in self.model.base_model.encoder.layer.named_parameters():
-            l = int(name[0])
-            if l <= self.nu:
+            transformer_layer = re.search("(?:encoder\.layer\.)([0-9]+)", name)
+            if transformer_layer and (int(transformer_layer.group(1)) > nu):
+                param.requires_grad = True
+            elif 'pooler' in name:
+                param.requires_grad = True
+            else:
                 param.requires_grad = False
 
     def forward(self, text, attn_mask=None):

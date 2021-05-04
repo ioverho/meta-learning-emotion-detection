@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 
-from modules.encoders import BertSequence
+from modules.encoders import TransformerEncoder
 from modules.mlp_clf import MLP
 
-class MetaBert(nn.Module):
+class SeqTransformer(nn.Module):
     def __init__(self, config):
-        """BERT sequence model for meta-learning.
+        """Transformer based sequence model for meta-learning. Only encodes, does not classify.
 
         Args:
             bert_encoder ([type]): [description]
@@ -15,18 +15,16 @@ class MetaBert(nn.Module):
         """
         super().__init__()
 
-        self.pt_bert_name = config['bert_name']
-        self.pt_bert_config = config['bert_config']
+        self.pt_encoder = config['encoder_name']
         self.nu = config['nu']
 
-        self.encoder = BertSequence(name=self.pt_bert_name,
-                                    config=self.pt_bert_config,
-                                    nu=self.nu)
+        self.encoder = TransformerEncoder(name=self.pt_encoder,
+                                          nu=self.nu)
 
         self.hidden_dims = config['hidden_dims']
-        self.act_fn = nn.ReLU if config['act_fn'] == 'ReLU' else nn.tanh
+        self.act_fn = nn.ReLU if config['act_fn'] == 'ReLU' else nn.Tanh
 
-        self.mlp = MLP(encoder_output_size=self.encoder.config.hidden_size,
+        self.mlp = MLP(encoder_output_size=self.encoder.model.config.hidden_size,
                        hidden_dims=self.hidden_dims,
                        act_fn=self.act_fn)
 

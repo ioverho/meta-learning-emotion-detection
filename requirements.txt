@@ -1,7 +1,5 @@
-pytorch
-pytorch-lightning
-jsonl
-transformers
-higher==0.2.1
+pytorch==1.8.1+cu102
+jsonl==2.0.0
+transformers==4.5.1
 nltk==3.6.2
-emoji==1.2.0
+emoji==2.0.0

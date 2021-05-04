@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 class MetaStratifiedLoader():
-    def __init__(self, source_dict, split, class_to_int, k, tokenizer, shuffle):
+    def __init__(self, source_dict, split, class_to_int, k, tokenizer, shuffle, device):
         """
         Class that acts as dataloader.
         Applies stratified sampling, such that every batch has N (classes) k-shots.
@@ -37,6 +37,8 @@ class MetaStratifiedLoader():
             for c in self.labels:
                 random.shuffle(self.data[c])
 
+        self.device = device
+
     def lens(self):
         return [len(self.data[k]) for k in self.labels]
 
@@ -58,10 +60,11 @@ class MetaStratifiedLoader():
         if self.tokenizer == None:
             return labels, text
         else:
-            encoded = self.tokenizer(text, padding=True, return_tensors="pt")
+            encoded = self.tokenizer(text, padding=True,
+                                     return_tensors="pt").to(self.device)
             text = encoded['input_ids']
             mask = encoded['attention_mask']
 
-            labels = torch.LongTensor(labels)
+            labels = torch.LongTensor(labels).to(self.device)
 
             return labels, text, mask

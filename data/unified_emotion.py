@@ -9,17 +9,26 @@ class unified_emotion():
     """Class for the 'Unified Emotion Dataset'. Data from https://github.com/sarnthil/unify-emotion-datasets.
     """
 
-    def __init__(self, file_path, include=None, exclude=['fb-valence-arousal-anon', 'emobank', 'affectivetext', 'emotion-cause', 'electoraltweets', 'ssec', 'tales-emotions'], split_ratio=0.8):
+    def __init__(self, file_path, include=['grounded_emotions'], split_ratio=0.8):
         """
         Class for the 'Unified Emotion Dataset'.
         Data from https://github.com/sarnthil/unify-emotion-datasets.
-        By default includes the following:
-            - crowdflower_data, 40k tweets, 14 labels
+        Possible inclusions:
+            - crowdflower, 40k tweets, 14 labels
             - dailydialog, 13k dialogs, 6 labels
             - emotiondata-aman, 15k sents, 7 labels
             - grounded_emotions, 2.5k tweets, 2 labels
             - isear, 3000 docs, 7 labels
             - emoint
+
+            (and some typical exclusions)
+            - fb-valence-arousal-anon
+            - emobank
+            - affectivetext
+            - emotion-cause
+            - electoraltweets
+            - ssec
+            - tales-emotions
 
         Args:
             file_path (str): path to the 'unified-dataset.jsonl' file
@@ -28,7 +37,7 @@ class unified_emotion():
             split_ratio (float, optional): amount of data reserved for test sets. Defaults to 0.8.
         """
         self.file_path = file_path
-        self.exclude = exclude
+        self.include = include
         self.split_ratio = split_ratio
 
     def prep(self, text_tokenizer=lambda x: x, text_tokenizer_kwargs=dict()):
@@ -46,7 +55,7 @@ class unified_emotion():
             for i, line in enumerate(file.iter()):
 
                 source = line['source']
-                if source in self.exclude:
+                if not source in self.include:
                     continue
 
                 split = 'all' if line.get('split', None) == None else line['split']
@@ -87,7 +96,7 @@ class unified_emotion():
         """
         return self.source_lengths
 
-    def get_dataloader(self, source_name,  k=4, tokenizer=None, shuffle=True):
+    def get_dataloader(self, source_name, device, k=4, tokenizer=None, shuffle=True):
         """Generates a dataloader from a specified dataset.
         See MetaStratifiedLoader for more.
 
@@ -108,7 +117,8 @@ class unified_emotion():
                                               class_to_int=self.label_map[source_name],
                                               k=k,
                                               tokenizer=tokenizer,
-                                              shuffle=shuffle if split=='train' else False
+                                              shuffle=shuffle,
+                                              device=device
                                               )
 
             if split == 'train':
