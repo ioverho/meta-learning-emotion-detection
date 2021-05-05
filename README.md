@@ -18,18 +18,32 @@ Conference
 -->
 </div>
 
-## Data loader example
-Download unified dataset and put in ./data/datasets: https://drive.google.com/file/d/1y7yjshepNRPhnh-Qz5MTRbnopGn7KzUm/view?usp=sharing Originally from: https://github.com/sarnthil/unify-emotion-datasets
-
-Play around in dataloader_example.ipynb
-
-## Description
-What it does
-
-## How to run
+[Structure](#structure)
+[Installation](#installation)
+[Environment](#environment)
+[How to Run](#how-to-run)
+[Results](#results)
+[Citation](#citation)
+## Structure
+```
+Meta-Learning-Emotion-Detection
+├── checkpoints
+│   └──
+├── datasets
+│   ├── raw data sets in named directories
+│   ├── unified_emotion.py
+│   │
+│   ├── go_emotions.py
+│   │
 ```
 
-## Imports
+## Installation
+
+## Environment
+
+## How to Run
+
+## Results
 
 ### Citation
 ```

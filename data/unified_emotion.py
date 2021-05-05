@@ -3,7 +3,21 @@ from collections import defaultdict
 import torch
 import jsonlines
 
-from data.utils.data_loader import MetaStratifiedLoader
+
+def unified_emotion_info():
+    return [{'source': 'affectivetext', 'size': 250, 'domain': 'headlines', 'classes': 6, 'special': 'non-discrete, multiple labels'},
+            {'source': 'crowdflower', 'size': 40000, 'domain': 'tweets', 'classes': 14, 'special': 'includes no-emotions class'},
+            {'source': 'dailydialog', 'size': 13000, 'domain': 'conversations', 'classes': 6, 'special': 'includes no-emotions class'},
+            {'source': 'electoraltweets', 'size': 4058, 'domain': 'tweets', 'classes': 8, 'special': 'includes no-emotions class'},
+            {'source': 'emobank', 'size': 10000, 'domain': 'headlines', 'classes': 3, 'special': 'VAD regression'},
+            {'source': 'emoint', 'size': 7097, 'domain': 'tweets', 'classes': 6, 'special': 'annotated by experts'},
+            {'source': 'emotion-cause', 'size': 2414, 'domain': 'artificial', 'classes': 6, 'special': 'N/A'},
+            {'source': 'fb-valence-arousal-anon', 'size': 2800, 'domain': 'facebook', 'classes': 3, 'special': 'VA regression'},
+            {'source': 'grounded_emotions', 'size': 2500, 'domain': 'tweets', 'classes': 2, 'special': 'N/A'},
+            {'source': 'ssec', 'size': 4868, 'domain': 'tweets', 'classes': 8, 'special': 'multiple labels per sentence'},
+            {'source': 'tales-emotion', 'size': 15302, 'domain': 'fairytales', 'classes': 6, 'special': 'includes no-emotions class'},
+            {'source': 'tec', 'size': 21051, 'domain': 'tweets', 'classes': 7, 'special': 'annotated by experts'}
+            ]
 
 class unified_emotion():
     """Class for the 'Unified Emotion Dataset'. Data from https://github.com/sarnthil/unify-emotion-datasets.
@@ -13,22 +27,6 @@ class unified_emotion():
         """
         Class for the 'Unified Emotion Dataset'.
         Data from https://github.com/sarnthil/unify-emotion-datasets.
-        Possible inclusions:
-            - crowdflower, 40k tweets, 14 labels
-            - dailydialog, 13k dialogs, 6 labels
-            - emotiondata-aman, 15k sents, 7 labels
-            - grounded_emotions, 2.5k tweets, 2 labels
-            - isear, 3000 docs, 7 labels
-            - emoint
-
-            (and some typical exclusions)
-            - fb-valence-arousal-anon
-            - emobank
-            - affectivetext
-            - emotion-cause
-            - electoraltweets
-            - ssec
-            - tales-emotions
 
         Args:
             file_path (str): path to the 'unified-dataset.jsonl' file
@@ -39,6 +37,8 @@ class unified_emotion():
         self.file_path = file_path
         self.include = include
         self.split_ratio = split_ratio
+
+        self.info = [row for row in unified_emotion_info() if row['source'] in self.include]
 
     def prep(self, text_tokenizer=lambda x: x, text_tokenizer_kwargs=dict()):
         """Generates dataset from unified file.
@@ -96,19 +96,22 @@ class unified_emotion():
         """
         return self.source_lengths
 
+    def __getitem__(self, i):
+        return self.datasets.get(i, None)
+
+"""
     def get_dataloader(self, source_name, device, k=4, tokenizer=None, shuffle=True):
-        """Generates a dataloader from a specified dataset.
+        Generates a dataloader from a specified dataset.
         See MetaStratifiedLoader for more.
 
         Args:
-            source_name (str): a dataset from one of the processed ones.
-            k (int, optional): the k-shot. Defaults to 4.
-            tokenizer (callable, optional): function that processes list of strings to PyTorch tensor. Defaults to None.
-            shuffle (boolean, optional): whether or not to shuffle the train data. Defaults to True.
+            source_name(str): a dataset from one of the processed ones.
+            k(int, optional): the k-shot. Defaults to 4.
+            tokenizer(callable, optional): function that processes list of strings to PyTorch tensor. Defaults to None.
+            shuffle(boolean, optional): whether or not to shuffle the train data. Defaults to True.
 
         Returns:
             dataloaders: iterable of data_loaders. First is train, last is test.
-        """
         data_loaders = []
         for split in self.datasets[source_name].keys():
             source_dict = self.datasets[source_name]
@@ -128,5 +131,4 @@ class unified_emotion():
 
         return data_loaders
 
-    def __getitem__(self, i):
-        return self.datasets.get(i, None)
+"""

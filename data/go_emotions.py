@@ -1,10 +1,7 @@
 from collections import defaultdict
 
-import torch
-import jsonlines
-
 from datasets import load_dataset
-from utils.data_loader import MetaStratifiedLoader
+from data.utils.data_loader import StratifiedLoader
 
 class go_emotions():
     """Class for the 'GoEmotions Dataset'
@@ -40,7 +37,7 @@ class go_emotions():
         test_set = test_set.filter(lambda example: not 27 in example['labels'])
 
         datasets = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-        datasets['go_emotions'] = defaultdict()
+        #datasets['go_emotions'] = defaultdict()
         source_lengths = dict()
         label_map = defaultdict()
         label_map["admiration"] = 0
@@ -89,11 +86,13 @@ class go_emotions():
                 labels = instance['labels']
                 if (len(labels) > 1) and not self.first_label_only:
                     for label_idx, label in enumerate(labels):
-                        label = inv_label_map[label]
+                        #label = inv_label_map[label]
+                        label = label
                         datasets['go_emotions'][split_name][label].append({'idx': (id + label_idx), 'labels': label, 'text': text})
                     source_lengths['go_emotions'] = id + len(labels)
                 else:
-                    label = inv_label_map[labels[0]]
+                    #label = inv_label_map[labels[0]]
+                    label = labels[0]
                     source_lengths['go_emotions'] = id + 1
 
                 datasets['go_emotions'][split_name][label].append({'idx': id, 'labels': label, 'text': text})
