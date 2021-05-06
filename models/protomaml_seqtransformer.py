@@ -29,6 +29,8 @@ class ProtoMAMLSeqTransformer(nn.Module):
         self.W_task = None
         self.b_task = None
 
+        self.clip_val = config['clip_val']
+
     def train(self):
         """Set model(s) to train.
         """
@@ -50,7 +52,7 @@ class ProtoMAMLSeqTransformer(nn.Module):
         """
         return next(self.model_shared.parameters()).device
 
-    def forward(self, text, attn_mask=None):
+    def forward(self, model_input):
         """
         Task-specific classification of a sequence.
         For safety, will not classify without initial adaptation, but otherwise will classify with whatever
@@ -58,8 +60,8 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         Args:
             labels (LongTensor): batch labels
-            text (LongTensor): batch text, converted to interger Tensor
-            attn_mask LongTensor, optional): attention mask, values from {0, 1}. Defaults to None.
+            model_input (dict of Tensors): model input from Huggingface tokenizer. Unrolled into model.
+
 
         Returns:
             Tensor: tensor with logits.
@@ -68,14 +70,14 @@ class ProtoMAMLSeqTransformer(nn.Module):
         if self.W_task == None or self.b_task == None:
             raise ValueError('No task-specific model specified yet.')
 
-        y = self.model_task(text, attn_mask)
+        y = self.model_task(model_input)
         logits = F.linear(y, self.W_task, self.b_task)
 
         return logits
 
-    def _generate_protoypes(self, labels, text, attn_mask=None):
+    def _generate_protoypes(self, labels, model_input):
 
-        y = self.model_shared(text, attn_mask)
+        y = self.model_shared(model_input)
 
         prototypes = [torch.mean(y[labels == i], dim=0)
                       for i in torch.unique(labels)]
@@ -83,32 +85,30 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         return prototypes
 
-    def generate_clf_weights(self, labels, text, attn_mask=None):
+    def generate_clf_weights(self, labels, model_input):
         """Generates the classification layer weights from prototypes derived from a single batch.
 
         Args:
             labels (LongTensor): batch labels
-            text (LongTensor): batch text, converted to interger Tensor
-            attn_mask LongTensor, optional): attention mask, values from {0, 1}. Defaults to None.
+            model_input (dict of Tensors): model input from Huggingface tokenizer. Unrolled into model.
 
         Returns:
             tuple of tensors: first tensor are weights, second biases
         """
 
-        prototypes = self._generate_protoypes(labels, text, attn_mask)
+        prototypes = self._generate_protoypes(labels, model_input)
 
         W_init = 2 * prototypes
         b_init = -torch.norm(prototypes, p=2, dim=1)
 
         return W_init, b_init
 
-    def adapt(self, labels, text, attn_mask=None, task_name=None, verbose=False):
+    def adapt(self, labels, model_input, task_name=None, verbose=False):
         """Perform MAML adaption with Prototypical initialization of classification layer.
 
         Args:
             labels (LongTensor): batch labels
-            text (LongTensor): batch text, converted to interger Tensor
-            attn_mask LongTensor, optional): attention mask, values from {0, 1}. Defaults to None.
+            model_input (dict of Tensors): model input from Huggingface tokenizer. Unrolled into model.
             task_name (str, optional): name of current task for administration within model. Defaults to None.
             verbose (bool, optional): whether or not to print inner loop updates. Defaults to False.
         """
@@ -122,25 +122,24 @@ class ProtoMAMLSeqTransformer(nn.Module):
             self.model_task.parameters(), lr=self.inner_lr)
 
         # Generate initial classification weights
-        W_init, b_init = self.generate_clf_weights(labels, text, attn_mask)
+        W_init, b_init = self.generate_clf_weights(labels, model_input)
 
         # Detach the initial weights from task-specific model
         self.W_task, self.b_task = W_init.detach().clone(), b_init.detach().clone()
         self.W_task.requires_grad, self.b_task.requires_grad = True, True
 
-        output_optimizer = optim.SGD(
-            [self.W_task, self.b_task], lr=self.output_lr)
+        output_optimizer = optim.SGD([self.W_task, self.b_task], lr=self.output_lr)
 
         for i in range(self.n_inner):
 
             # Embed, encode, classify and compute loss
-            logits = self.forward(text, attn_mask)
+            logits = self.forward(model_input)
             loss = self.lossfn(logits, labels)
 
             # Backprop the output parameters
             # Retrain graph for shared parameters
-            self.W_task.grad, self.b_task.grad = torch.autograd.grad(
-                loss, [self.W_task, self.b_task], retain_graph=True)
+            self.W_task.grad, self.b_task.grad = torch.autograd.grad(loss,\
+                [self.W_task, self.b_task], retain_graph=True)
 
             # Calculate the gradients on shared parameters here
             updateable_task_params = [
@@ -150,6 +149,10 @@ class ProtoMAMLSeqTransformer(nn.Module):
             # Store task-specific gradients
             for param, grad in zip(updateable_task_params, task_grads):
                 param.grad = grad
+
+            if self.clip_val > 0:
+                torch.nn.utils.clip_grad_norm_(updateable_task_params,
+                                               self.clip_val)
 
             # Update the parameters
             output_optimizer.step()
@@ -173,15 +176,14 @@ class ProtoMAMLSeqTransformer(nn.Module):
         """
 
         # Calculate gradients for task-specific parameters
-        updateable_task_params = [
-            param for param in self.model_task.parameters() if param.requires_grad]
-        task_grads = torch.autograd.grad(
-            loss, updateable_task_params, retain_graph=True)
-        updateable_task_params = None
+        updateable_task_params = [param for param in self.model_task.parameters()\
+            if param.requires_grad]
+        task_grads = torch.autograd.grad(loss, updateable_task_params,
+                                         retain_graph=True)
 
         # Calculate gradients for shared model parameters
-        updateable_shared_params = [
-            param for param in self.model_shared.parameters() if param.requires_grad]
+        updateable_shared_params = [param for param in self.model_shared.parameters()\
+            if param.requires_grad]
         shared_grads = torch.autograd.grad(loss, updateable_shared_params)
 
         # Accumulate gradients
@@ -190,4 +192,7 @@ class ProtoMAMLSeqTransformer(nn.Module):
                 param.grad = g_shared + g_task
             else:
                 param.grad += g_shared + g_task
-        updateable_shared_params = None
+
+        if self.clip_val > 0:
+            torch.nn.utils.clip_grad_norm_(updateable_shared_params,
+                                           self.clip_val)

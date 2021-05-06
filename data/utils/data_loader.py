@@ -9,14 +9,14 @@ def _data_to_model_input(support_set, query_set, tokenizer, device):
     support_set['text'] = tokenizer(support_set['text'],
                                 return_tensors='pt',
                                 padding=True).to(device)
-    support_set['labels'] = torch.LongTensor(support_set
-                                            ['labels']).to(device)
+    support_set['labels'] = torch.LongTensor(support_set['labels']\
+        ).to(device)
 
     query_set['text'] = tokenizer(query_set['text'],
                                 return_tensors='pt',
                                 padding=True).to(device)
-    query_set['labels'] = torch.LongTensor(query_set
-                                        ['labels']).to(device)
+    query_set['labels'] = torch.LongTensor(query_set['labels']\
+        ).to(device)
 
     return support_set, query_set
 
@@ -104,7 +104,10 @@ class AdaptiveNKShotLoader():
     def __next__(self):
 
         # Compute the N (number of classes)
-        n_classes = np.random.randint(low=5, high=len(self.classes))
+        if len(self.classes) <= 3:
+            n_classes = len(self.classes)
+        else:
+            n_classes = np.random.randint(low=3, high=len(self.classes))
         classes_sample = np.random.choice(self.classes,
                                           n_classes, replace=False)
         class_lens = np.array([len(self.data[c]) for c in classes_sample])

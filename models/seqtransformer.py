@@ -31,9 +31,9 @@ class SeqTransformer(nn.Module):
 
         self.out_dim = self.mlp.out_dim
 
-    def forward(self, text, attn_mask=None):
+    def forward(self, model_input):
 
-        y = self.encoder(text, attn_mask)
+        y = self.encoder(model_input)
         y = self.mlp(y)
 
         return y
