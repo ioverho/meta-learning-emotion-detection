@@ -7,14 +7,14 @@ import torch
 
 def _data_to_model_input(support_set, query_set, tokenizer, device):
     support_set['text'] = tokenizer(support_set['text'],
-                                return_tensors='pt',
-                                padding=True).to(device)
+                                    return_tensors='pt',
+                                    padding=True).to(device)
     support_set['labels'] = torch.LongTensor(support_set['labels']\
         ).to(device)
 
     query_set['text'] = tokenizer(query_set['text'],
-                                return_tensors='pt',
-                                padding=True).to(device)
+                                  return_tensors='pt',
+                                  padding=True).to(device)
     query_set['labels'] = torch.LongTensor(query_set['labels']\
         ).to(device)
 
@@ -71,7 +71,7 @@ class StratifiedLoader():
             query_set['labels'], query_set['text']
 
 class AdaptiveNKShotLoader():
-    def __init__(self, dataset, device, tokenizer=None, max_support_size=128):
+    def __init__(self, dataset, device, tokenizer=None, max_support_size=128, subset_classes=True, temp_map=True):
         """
         Dataloader with adaptive/stochastic N-way, k-shot batches.
         Support set has random number of examples per class, although proportional to class size.
@@ -92,6 +92,8 @@ class AdaptiveNKShotLoader():
             device (torch.device): which device to push data to
             tokenizer (Huggingface tokenizer, optional): takes list of text and converts to model input. Defaults to None.
             max_support_size (int, optional): max size of the support set. Defaults to 128.
+            subset_classes (boolean, optional): whether or not to sample a subset of labels. Defaults to True.
+            temp_map (boolean, optional): defines a batch-specific label mapping. Necessary for loss to work. Defaults to True.
         """
 
         self.data = dataset
@@ -99,18 +101,25 @@ class AdaptiveNKShotLoader():
         self.classes = list(self.data.keys())
         self.tokenizer = tokenizer
 
+        self.subset_classes = subset_classes
         self.max_support_size = max_support_size
+        self.temp_map = temp_map
 
     def __next__(self):
 
         # Compute the N (number of classes)
-        if len(self.classes) <= 3:
+        if len(self.classes) <= 3 or (not self.subset_classes):
             n_classes = len(self.classes)
         else:
             n_classes = np.random.randint(low=3, high=len(self.classes))
-        classes_sample = np.random.choice(self.classes,
-                                          n_classes, replace=False)
+        classes_sample = np.random.choice(self.classes, n_classes, replace=False)
+
         class_lens = np.array([len(self.data[c]) for c in classes_sample])
+
+        if self.temp_map:
+            temp_map = {true_label: temp_label for temp_label,
+                        true_label in enumerate(sorted(set(classes_sample)))}
+
 
         # Compute query set size
         # Maximum is 10 per class, per definition, balanced
@@ -140,6 +149,9 @@ class AdaptiveNKShotLoader():
                                       replace=False)
 
             labels = [s['labels'] for s in sample]
+            if self.temp_map:
+                labels = list(map(lambda x: temp_map[x], labels))
+
             text = [s['text'] for s in sample]
 
             support_set['labels'].extend(labels[:int(k_c[i])])

@@ -189,11 +189,14 @@ def train(config):
             datasubset = dataset.datasets[task]['train']
             dataloader = AdaptiveNKShotLoader(dataset=datasubset,
                                               device=device,
+                                              tokenizer=tokenizer,
                                               max_support_size=config['max_support_size'],
-                                              tokenizer=tokenizer)
+                                              temp_map=True
+                                              )
 
             # Inner loop
             # Support set
+            print(source_name)
             batch = next(dataloader)
             support_labels, support_input, query_labels, query_input  = batch
 
