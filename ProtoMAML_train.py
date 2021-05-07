@@ -11,6 +11,7 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+import torch.autograd.profiler as profiler
 from transformers import AutoTokenizer, get_constant_schedule_with_warmup
 
 from models.protomaml_seqtransformer import ProtoMAMLSeqTransformer
@@ -92,188 +93,188 @@ def meta_evaluate(model, dataset, tokenizer, device, config, timer):
 
 def train(config):
 
-    # Set to debug in case of various weird tests
-    if (not config['gpu']) and (not config['debug']):
-        config['debug'] = True
-        print(f"Setting debug mode to {config['debug']}.")
+    with profiler.profile(profile_memory=True) as prof:
+        # Set to debug in case of various weird tests
+        if (not config['gpu']) and (not config['debug']):
+            config['debug'] = True
+            print(f"Setting debug mode to {config['debug']}.")
 
-    ## Logging Directories
-    log_dir = os.path.join(config['checkpoint_path'], config['version'])
+        ## Logging Directories
+        log_dir = os.path.join(config['checkpoint_path'], config['version'])
 
-    os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(os.path.join(log_dir, 'tensorboard'), exist_ok=True)
-    os.makedirs(os.path.join(log_dir, 'checkpoint'), exist_ok=True)
-    print(f"Saving models and logs to {log_dir}")
+        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(os.path.join(log_dir, 'tensorboard'), exist_ok=True)
+        os.makedirs(os.path.join(log_dir, 'checkpoint'), exist_ok=True)
+        print(f"Saving models and logs to {log_dir}")
 
-    with open(os.path.join(log_dir, 'checkpoint', 'hparams.pickle'), 'wb') as file:
-        pickle.dump(config, file)
+        with open(os.path.join(log_dir, 'checkpoint', 'hparams.pickle'), 'wb') as file:
+            pickle.dump(config, file)
 
-    ## Initialization
-    # Device
-    device = torch.device('cuda' if (torch.cuda.is_available() and config['gpu']) else 'cpu')
+        ## Initialization
+        # Device
+        device = torch.device('cuda' if (torch.cuda.is_available() and config['gpu']) else 'cpu')
 
-    # Build the tensorboard writer
-    writer = SummaryWriter(os.path.join(log_dir, 'tensorboard'))
+        # Build the tensorboard writer
+        writer = SummaryWriter(os.path.join(log_dir, 'tensorboard'))
 
-    # Load in the data
-    dataset = unified_emotion("./data/datasets/unified-dataset.jsonl",
-                              include=config['include'])
-    dataset.prep(text_tokenizer=manual_tokenizer)
+        # Load in the data
+        dataset = unified_emotion("./data/datasets/unified-dataset.jsonl",
+                                include=config['include'])
+        dataset.prep(text_tokenizer=manual_tokenizer)
 
-    # Initialization of model
-    config['lossfn'] = nn.CrossEntropyLoss
-    model = ProtoMAMLSeqTransformer(config).to(device)
-    print(f"Model loaded succesfully on device: {model.device()}")
+        # Initialization of model
+        config['lossfn'] = nn.CrossEntropyLoss
+        model = ProtoMAMLSeqTransformer(config).to(device)
+        print(f"Model loaded succesfully on device: {model.device()}")
 
-    # Huggingface tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config['encoder_name'])
+        # Huggingface tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(config['encoder_name'])
 
-    tokenizer.add_special_tokens({'additional_special_tokens': ["HTTPURL", "@USER"]})
-    model.model_shared.encoder.model.resize_token_embeddings(len(tokenizer.vocab))
+        tokenizer.add_special_tokens({'additional_special_tokens': ["HTTPURL", "@USER"]})
+        model.model_shared.encoder.model.resize_token_embeddings(len(tokenizer.vocab))
 
-    # Meta optimizers
-    shared_optimizer = optim.SGD(model.model_shared.parameters(), lr=config['meta_lr'])
-    shared_lr_schedule = get_constant_schedule_with_warmup(shared_optimizer, config['warmup_steps'])
+        # Meta optimizers
+        shared_optimizer = optim.SGD(model.model_shared.parameters(), lr=config['meta_lr'])
+        shared_lr_schedule = get_constant_schedule_with_warmup(shared_optimizer, config['warmup_steps'])
 
-    # Check the dataloader
-    print('\nExample data')
-    for task in dataset.lens.keys():
-        datasubset = dataset.datasets[task]['train']
-        dataloader = StratifiedLoader(dataset=datasubset,
-                                      device=device,
-                                      k=1)
-        support_labels, support_text, _, _ = next(dataloader)
-
-        print(task)
-
-        label_map = {v: k for k, v in dataset.label_map[task].items()}
-        tokenized_texts = list(
-            map(tokenizer.decode, tokenizer(support_text)['input_ids']))
-        for txt, label in zip(tokenized_texts, support_labels):
-            print(label_map[label], txt)
-        print()
-
-    # Set-up the timer
-    timer = Timer()
-
-    # Meta-evaluate prior to training for decent baseline
-    if (not config['debug']):
-        meta_eval = meta_evaluate(model, dataset, tokenizer, device, config, timer)
-
-        macro_f1 = np.mean(list(meta_eval['f1'].values()))
-
-        writer.add_scalars('Loss/MetaEval', meta_eval['loss'], 0)
-        writer.add_scalars('Accuracy/MetaEval', meta_eval['acc'], 0)
-        writer.add_scalars('F1/MetaEval', meta_eval['f1'], 0)
-        writer.add_scalar('MacroF1/MetaEval', 0)
-
-        best_macro_f1 = macro_f1
-    else:
-        best_macro_f1 = 0.0
-
-    curr_patience = config['patience']
-
-    if config['overfit_on_single_query']:
-        assert len(config['include']) == 1, "Too many datasets for overfit test."
-        dataloader = StratifiedLoader(dataset=dataset.datasets[list(dataset.lens.keys())[0]]['test'],
-                                      device=device, k=16, tokenizer=tokenizer)
-        overfit_labels, overfit_text, _, _ = next(dataloader)
-
-    for episode in range(1, config['max_episodes']+1):
-        ############
-        # Training #
-        ############
-        for ii in range(config['n_outer']):
-
-            source_name = dataset_sampler(dataset, sampling_method='sqrt')
+        # Check the dataloader
+        print('\nExample data')
+        for task in dataset.lens.keys():
             datasubset = dataset.datasets[task]['train']
-            dataloader = AdaptiveNKShotLoader(dataset=datasubset,
-                                              device=device,
-                                              tokenizer=tokenizer,
-                                              max_support_size=config['max_support_size'],
-                                              temp_map=True
-                                              )
+            dataloader = StratifiedLoader(dataset=datasubset,
+                                        device=device,
+                                        k=1)
+            support_labels, support_text, _, _ = next(dataloader)
 
-            # Inner loop
-            # Support set
-            print(source_name)
-            batch = next(dataloader)
-            support_labels, support_input, query_labels, query_input  = batch
+            print(task)
 
-            if config['overfit_on_single_query']:
-                query_labels, query_input = overfit_labels, overfit_text
+            label_map = {v: k for k, v in dataset.label_map[task].items()}
+            tokenized_texts = list(
+                map(tokenizer.decode, tokenizer(support_text)['input_ids']))
+            for txt, label in zip(tokenized_texts, support_labels):
+                print(label_map[label], txt)
+            print()
 
-            model.train()
-            model.adapt(support_labels, support_input,
-                        task_name=source_name, verbose=config['debug'])
+        # Set-up the timer
+        timer = Timer()
 
-            # Outer loop
-            # Query set
-            model.eval()
-            logits = model(query_input)
-            loss = model.lossfn(logits, query_labels)
-
-            model.backward(loss)
-
-            # Logging
-            n_classes = len(dataset.label_map[source_name].keys())
-            with torch.no_grad():
-                mets = logging_metrics(logits.detach().cpu(), query_labels.detach().cpu())
-            print("{:} | Train | Episode {} | Task {}/{}: {:<20s}, N={} | Loss {:.4E}, Acc {:5.2f}, F1 {:5.2f}"\
-                .format(timer.dt(), episode, ii+1, config['n_outer'], source_name, n_classes,
-                        loss.detach().item(), mets['acc']*100, mets['f1']*100))
-
-            writer.add_scalars('Loss/Train', {source_name: loss.detach().item()}, episode)
-            writer.add_scalars('Accuracy/Train', {source_name: mets['acc'] * 100}, episode)
-            writer.add_scalars('F1/Train', {source_name: mets['f1'] * 100}, episode)
-
-        shared_optimizer.step()
-        shared_lr_schedule.step()
-        shared_optimizer.zero_grad()
-
-        ##############
-        # Evaluation #
-        ##############
-        if (episode % config['eval_every_n']) == 0 and (not config['debug']):
-
+        # Meta-evaluate prior to training for decent baseline
+        if (not config['debug']):
             meta_eval = meta_evaluate(model, dataset, tokenizer, device, config, timer)
 
             macro_f1 = np.mean(list(meta_eval['f1'].values()))
 
-            writer.add_scalars('Loss/MetaEval', meta_eval['loss'], episode)
-            writer.add_scalars('Accuracy/MetaEval', meta_eval['acc'], episode)
-            writer.add_scalars('F1/MetaEval', meta_eval['f1'], episode)
-            writer.add_scalar('MacroF1/MetaEval', episode+1)
+            writer.add_scalars('Loss/MetaEval', meta_eval['loss'], 0)
+            writer.add_scalars('Accuracy/MetaEval', meta_eval['acc'], 0)
+            writer.add_scalars('F1/MetaEval', meta_eval['f1'], 0)
+            writer.add_scalar('MacroF1/MetaEval', 0)
 
-            if macro_f1 > best_macro_f1:
-                save_name = "episode-{:}_macrof1-{:5.2f}".format(episode, macro_f1)
-                torch.save(model.state_dict(), os.path.join(
-                    log_dir, 'checkpoint', save_name))
+            best_macro_f1 = macro_f1
+        else:
+            best_macro_f1 = 0.0
 
-                print(f"Saving model as {save_name}")
-                best_macro_f1 = macro_f1
-                curr_patience = config['patience']
+        curr_patience = config['patience']
 
-            else:
-                print(f"Model did not improve with macrof1={macro_f1}")
-                if episode > config['min_episodes']:
-                    curr_patience -= 1
+        if config['overfit_on_single_query']:
+            assert len(config['include']) == 1, "Too many datasets for overfit test."
+            dataloader = StratifiedLoader(dataset=dataset.datasets[list(dataset.lens.keys())[0]]['test'],
+                                        device=device, k=16, tokenizer=tokenizer)
+            overfit_labels, overfit_text, _, _ = next(dataloader)
 
-            print('')
+        for episode in range(1, config['max_episodes']+1):
+            ############
+            # Training #
+            ############
+            for ii in range(config['n_outer']):
 
-            if curr_patience < 0:
-                print("Stopping early.")
-                break
+                source_name = dataset_sampler(dataset, sampling_method='sqrt')
+                datasubset = dataset.datasets[task]['train']
+                dataloader = AdaptiveNKShotLoader(dataset=datasubset,
+                                                device=device,
+                                                tokenizer=tokenizer,
+                                                max_support_size=config['max_support_size'])
+
+                # Inner loop
+                # Support set
+                batch = next(dataloader)
+                support_labels, support_input, query_labels, query_input  = batch
+                print(support_labels, query_labels)
+
+                if config['overfit_on_single_query']:
+                    query_labels, query_input = overfit_labels, overfit_text
+
+                model.train()
+                model.adapt(support_labels, support_input,
+                            task_name=source_name, verbose=config['debug'])
+
+                # Outer loop
+                # Query set
+                model.eval()
+                logits = model(query_input)
+                loss = model.lossfn(logits, query_labels)
+
+                model.backward(loss)
+
+                # Logging
+                with torch.no_grad():
+                    mets = logging_metrics(logits.detach().cpu(), query_labels.detach().cpu())
+                print("{:} | Train | Episode {} | Task {}/{}: {:<20s}, N={} | Loss {:.4E}, Acc {:5.2f}, F1 {:5.2f}"\
+                    .format(timer.dt(), episode, ii+1, config['n_outer'], source_name, dataloader.n_classes,
+                            loss.detach().item(), mets['acc']*100, mets['f1']*100))
+
+                writer.add_scalars('Loss/Train', {source_name: loss.detach().item()}, episode)
+                writer.add_scalars('Accuracy/Train', {source_name: mets['acc'] * 100}, episode)
+                writer.add_scalars('F1/Train', {source_name: mets['f1'] * 100}, episode)
+
+            shared_optimizer.step()
+            shared_lr_schedule.step()
+            shared_optimizer.zero_grad()
+
+            ##############
+            # Evaluation #
+            ##############
+            if (episode % config['eval_every_n']) == 0 and (not config['debug']):
+
+                meta_eval = meta_evaluate(model, dataset, tokenizer, device, config, timer)
+
+                macro_f1 = np.mean(list(meta_eval['f1'].values()))
+
+                writer.add_scalars('Loss/MetaEval', meta_eval['loss'], episode)
+                writer.add_scalars('Accuracy/MetaEval', meta_eval['acc'], episode)
+                writer.add_scalars('F1/MetaEval', meta_eval['f1'], episode)
+                writer.add_scalar('MacroF1/MetaEval', episode+1)
+
+                if macro_f1 > best_macro_f1:
+                    save_name = "episode-{:}_macrof1-{:5.2f}".format(episode, macro_f1)
+                    torch.save(model.state_dict(), os.path.join(
+                        log_dir, 'checkpoint', save_name))
+
+                    print(f"Saving model as {save_name}")
+                    best_macro_f1 = macro_f1
+                    curr_patience = config['patience']
+
+                else:
+                    print(f"Model did not improve with macrof1={macro_f1}")
+                    if episode > config['min_episodes']:
+                        curr_patience -= 1
+
+                print('')
+
+                if curr_patience < 0:
+                    print("Stopping early.")
+                    break
+
+    print(prof.key_averages().table(sort_by="self_cpu_memory_usage"))
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     ## Dataset Initialization Hyperparameters
-    parser.add_argument('--include', type=str, nargs='+', default=['crowdflower', 'dailydialog', 'electoraltweets', 'emoint', 'emotion-cause', 'grounded_emotions', 'ssec', 'tec'],
+    parser.add_argument('--include', type=str, nargs='+', default=['crowdflower', 'dailydialog', 'emoint', 'emotion-cause', 'grounded_emotions', 'ssec', 'tec'],
                         help='Datasets to include.')
 
-    parser.add_argument('--max_support_size', type=int, default=8,
+    parser.add_argument('--max_support_size', type=int, default=64,
                         help='Batch size during adaptation to support set.')
 
     ## Model Initialization Hyperparameters
@@ -300,7 +301,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_outer', type=int, default=1,
                         help='Number of outer loop (MAML) steps to take. Samples a new task per steps. Values greater than 1 essentially mean accumulated gradients.')
 
-    parser.add_argument('--max_episodes', type=int, default=10000,
+    parser.add_argument('--max_episodes', type=int, default=10,
                         help='Maximum number of episodes to take.')
 
     parser.add_argument('--min_episodes', type=int, default=7500,

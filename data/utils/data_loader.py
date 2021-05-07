@@ -108,23 +108,28 @@ class AdaptiveNKShotLoader():
     def __next__(self):
 
         # Compute the N (number of classes)
-        if len(self.classes) <= 3 or (not self.subset_classes):
-            n_classes = len(self.classes)
+        if (len(self.classes) <= 3) or (not self.subset_classes):
+            self.n_classes = len(self.classes)
         else:
-            n_classes = np.random.randint(low=3, high=len(self.classes))
-        classes_sample = np.random.choice(self.classes, n_classes, replace=False)
+            self.n_classes = np.random.randint(low=2, high=len(self.classes))
 
-        class_lens = np.array([len(self.data[c]) for c in classes_sample])
+        classes_sample = np.random.choice(self.classes, self.n_classes,
+                                          replace=False)
+
+        self.class_lens = np.array([len(self.data[c]) for c in classes_sample])
 
         if self.temp_map:
             temp_map = {true_label: temp_label for temp_label,
                         true_label in enumerate(sorted(set(classes_sample)))}
+            self.temp_map = temp_map
 
 
         # Compute query set size
-        # Maximum is 10 per class, per definition, balanced
-        min_class_size = np.min(np.floor(0.5 * class_lens))
-        query_size = min(10, min_class_size)
+        # Maximum is 5 per class, per definition, balanced
+        min_class_size = np.min(np.floor(0.5 * self.class_lens))
+        query_size = min(self.max_support_size // self.n_classes, min_class_size)
+        if query_size == 0:
+            print("WARNING: Query class size is 0.")
 
         # Compute support set size
         beta = np.random.random()
@@ -134,12 +139,12 @@ class AdaptiveNKShotLoader():
 
         # Compute the class specifc k
         alpha = np.random.uniform(low=np.log(
-            0.5), high=np.log(2), size=(n_classes))
-        R = np.exp(alpha) * class_lens
+            0.5), high=np.log(2), size=(self.n_classes))
+        R = np.exp(alpha) * self.class_lens
         R = R / sum(R)
 
-        k_c = np.min(np.stack([np.floor(R * (support_size - n_classes) + 1),
-                               class_lens - query_size]), axis=0)
+        k_c = np.min(np.stack([np.floor(R * (support_size - self.n_classes) + 1),
+                               self.class_lens - query_size]), axis=0)
 
         # Randomly sample both support and query sets
         support_set, query_set = defaultdict(list), defaultdict(list)

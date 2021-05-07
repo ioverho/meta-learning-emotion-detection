@@ -1,13 +1,12 @@
 from collections import defaultdict
 
 from datasets import load_dataset
-from data.utils.data_loader import StratifiedLoader
 
 class go_emotions():
     """Class for the 'GoEmotions Dataset'
     """
 
-    def __init__(self, first_label_only=True):
+    def __init__(self, first_label_only=True, verbose=True):
         """
         Class for the 'GoEmotions Dataset'.
 
@@ -17,6 +16,7 @@ class go_emotions():
 
         self.dataset_name = 'go_emotions'
         self.first_label_only = first_label_only
+        self.verbose = verbose
 
     def prep(self, text_tokenizer=lambda x: x, text_tokenizer_kwargs=dict()):
         """
@@ -37,7 +37,6 @@ class go_emotions():
         test_set = test_set.filter(lambda example: not 27 in example['labels'])
 
         datasets = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-        #datasets['go_emotions'] = defaultdict()
         source_lengths = dict()
         label_map = defaultdict()
         label_map["admiration"] = 0
@@ -67,7 +66,7 @@ class go_emotions():
         label_map["remorse"] = 24
         label_map["sadness"] = 25
         label_map["surprise"] = 26
-        inv_label_map = {v: k for k, v in label_map.items()}
+        self.inv_label_map = {v: k for k, v in label_map.items()}
 
 
         for set in [('train', train_set), ('validation', dev_set), ('test', test_set)]:
@@ -101,6 +100,39 @@ class go_emotions():
         self.source_lengths = source_lengths
         self.label_map = label_map
 
+        # Remove classes with limited data
+        total_removed, total_data_removed = 0, 0
+        removing = []
+        for source in datasets.keys():
+            for c in datasets[source]['train'].keys():
+                train_size = len(datasets[source]['train'][c])
+                test_size = len(datasets[source]['test'][c])
+
+                keep = (train_size >= 96 and test_size >= 64)
+
+                if (not keep):
+                    if self.verbose:
+                        print("Removed {:}/{:} for too little data |train|={}, |test|={}".
+                              format(source, self.inv_label_map[c], train_size, test_size))
+                    total_removed += 1
+                    total_data_removed += train_size + test_size
+
+                    self.source_lengths[source] -= train_size + test_size
+
+                    removing.append((source, c))
+
+        for source, c in removing:
+            del datasets[source]['train'][c]
+            del datasets[source]['test'][c]
+
+        if self.verbose:
+            print("Removed a total of {:} classes and {:} examples.".format(
+                total_removed, total_data_removed))
+
+        for source in datasets.keys():
+            assert len(datasets[source]['train'].keys()) >= 2, print(
+                f"{source} has too few classes remaining.")
+
     @property
     def lens(self):
         """
@@ -108,42 +140,6 @@ class go_emotions():
         """
 
         return self.source_lengths
-
-    def get_dataloader(self, source_name,  k=4, tokenizer=None, shuffle=True):
-        """
-        Generates a dataloader from a specified dataset.
-        See MetaStratifiedLoader for more.
-
-        Args:
-            source_name (str): a dataset from one of the processed ones.
-            k (int, optional): the k-shot. Defaults to 4.
-            tokenizer (callable, optional): function that processes list of strings to PyTorch tensor. Defaults to None.
-            shuffle (boolean, optional): whether or not to shuffle the train data. Defaults to True.
-
-        Returns:
-            dataloaders: iterable of data_loaders. First is train, last is test.
-        """
-
-        data_loaders = []
-        for split in self.datasets[source_name].keys():
-            source_dict = self.datasets[source_name]
-            dataloader = MetaStratifiedLoader(source_dict=source_dict,
-                                              split=split,
-                                              class_to_int=self.label_map[source_name],
-                                              k=k,
-                                              tokenizer=tokenizer,
-                                              shuffle=shuffle if split=='train' else False
-                                              )
-
-            if split == 'train':
-                data_loaders.insert(0, dataloader)
-            else:
-                data_loaders.append(dataloader)
-
-        return data_loaders
-
-    def __getitem__(self, i):
-        return self.datasets.get(i, None)
 
 # DEBUG
 if __name__ == "__main__":
