@@ -1,5 +1,7 @@
 pytorch==1.8.1+cu102
 jsonl==2.0.0
 transformers==4.5.1
-nltk==3.6.2
+spacy==3.0.2
 emoji==2.0.0
+Pympler==0.9
+psutil==5.8.0
