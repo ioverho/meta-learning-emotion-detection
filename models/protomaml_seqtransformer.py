@@ -45,12 +45,17 @@ class ProtoMAMLSeqTransformer(nn.Module):
         self.model_shared.eval()
         self.model_task.eval()
 
-    def device(self):
+    def get_device(self):
         """
         Hacky method for checking model device.
         Requires all parameters to be on same device.
         """
-        return next(self.model_shared.parameters()).device
+        assert next(self.model_shared.parameters()).device == next(self.model_task.parameters()).device,\
+            "Models' devices do not match"
+
+        self.device = next(self.model_shared.parameters()).device
+
+        return self.device
 
     def forward(self, model_input):
         """
@@ -116,16 +121,17 @@ class ProtoMAMLSeqTransformer(nn.Module):
         self.task_name = task_name
 
         # Clone model for task specific episode model
+        del self.model_task, self.W_task, self.b_task
         self.model_task = deepcopy(self.model_shared)
 
-        task_optimizer = optim.SGD(
-            self.model_task.parameters(), lr=self.inner_lr)
+        task_optimizer = optim.SGD(self.model_task.parameters(),
+                                   lr=self.inner_lr)
 
         # Generate initial classification weights
         W_init, b_init = self.generate_clf_weights(labels, model_input)
 
         # Detach the initial weights from task-specific model
-        self.W_task, self.b_task = W_init.detach().clone(), b_init.detach().clone()
+        self.W_task, self.b_task = W_init.detach(), b_init.detach()
         self.W_task.requires_grad, self.b_task.requires_grad = True, True
 
         output_optimizer = optim.SGD([self.W_task, self.b_task], lr=self.output_lr)
@@ -165,6 +171,8 @@ class ProtoMAMLSeqTransformer(nn.Module):
                 print("\tInner {} | Loss {:.4E}".format(
                     i, loss.detach().item()))
 
+            del task_grads, logits, loss
+
         self.W_task = W_init + (self.W_task - W_init).detach()
         self.b_task = b_init + (self.b_task - b_init).detach()
 
@@ -196,3 +204,5 @@ class ProtoMAMLSeqTransformer(nn.Module):
         if self.clip_val > 0:
             torch.nn.utils.clip_grad_norm_(updateable_shared_params,
                                            self.clip_val)
+
+        del task_grads, shared_grads
