@@ -76,6 +76,7 @@ class go_emotions():
                 id = source_lengths.get('go_emotions', 0)
 
                 text = text_tokenizer(instance['text'], **text_tokenizer_kwargs)
+                text = text.encode('utf-8').decode('ascii', 'ignore')
                 if text == None:
                     continue
                 if isinstance(text, list):
