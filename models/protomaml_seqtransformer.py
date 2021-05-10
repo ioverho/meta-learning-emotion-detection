@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+from memory_profiler import profile
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -57,6 +58,10 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         return self.device
 
+    def _get_updateable_parameters(self, model):
+        return [param for param in model.parameters() if param.requires_grad]
+
+    #@profile
     def forward(self, model_input):
         """
         Task-specific classification of a sequence.
@@ -80,6 +85,7 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         return logits
 
+    #@profile
     def _generate_protoypes(self, labels, model_input):
 
         y = self.model_shared(model_input)
@@ -108,6 +114,7 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         return W_init, b_init
 
+    #@profile
     def adapt(self, labels, model_input, task_name=None, verbose=False):
         """Perform MAML adaption with Prototypical initialization of classification layer.
 
@@ -142,22 +149,19 @@ class ProtoMAMLSeqTransformer(nn.Module):
             logits = self.forward(model_input)
             loss = self.lossfn(logits, labels)
 
-            # Backprop the output parameters
-            # Retrain graph for shared parameters
-            self.W_task.grad, self.b_task.grad = torch.autograd.grad(loss,\
-                [self.W_task, self.b_task], retain_graph=True)
-
-            # Calculate the gradients on shared parameters here
-            updateable_task_params = [
-                param for param in self.model_task.parameters() if param.requires_grad]
-            task_grads = torch.autograd.grad(loss, updateable_task_params)
+            # Calculate the gradients on output and task parameters here
+            task_grads = torch.autograd.grad(loss,
+                                             [self.W_task, self.b_task] +
+                                             self._get_updateable_parameters(self.model_task))
 
             # Store task-specific gradients
-            for param, grad in zip(updateable_task_params, task_grads):
+            for param, grad in zip([self.W_task, self.b_task] +
+                                   self._get_updateable_parameters(self.model_task),
+                                   task_grads):
                 param.grad = grad
 
             if self.clip_val > 0:
-                torch.nn.utils.clip_grad_norm_(updateable_task_params,
+                torch.nn.utils.clip_grad_norm_(self._get_updateable_parameters(self.model_task),
                                                self.clip_val)
 
             # Update the parameters
@@ -184,25 +188,21 @@ class ProtoMAMLSeqTransformer(nn.Module):
         """
 
         # Calculate gradients for task-specific parameters
-        updateable_task_params = [param for param in self.model_task.parameters()\
-            if param.requires_grad]
-        task_grads = torch.autograd.grad(loss, updateable_task_params,
+        task_grads = torch.autograd.grad(loss, self._get_updateable_parameters(self.model_task),
                                          retain_graph=True)
 
         # Calculate gradients for shared model parameters
-        updateable_shared_params = [param for param in self.model_shared.parameters()\
-            if param.requires_grad]
-        shared_grads = torch.autograd.grad(loss, updateable_shared_params)
+        shared_grads = torch.autograd.grad(loss, self._get_updateable_parameters(self.model_shared))
 
         # Accumulate gradients
-        for param, g_task, g_shared in zip(updateable_shared_params, task_grads, shared_grads):
+        for param, g_task, g_shared in zip(self._get_updateable_parameters(self.model_shared), task_grads, shared_grads):
             if param.grad == None:
                 param.grad = g_shared + g_task
             else:
                 param.grad += g_shared + g_task
 
         if self.clip_val > 0:
-            torch.nn.utils.clip_grad_norm_(updateable_shared_params,
+            torch.nn.utils.clip_grad_norm_(self._get_updateable_parameters(self.model_shared),
                                            self.clip_val)
 
         del task_grads, shared_grads

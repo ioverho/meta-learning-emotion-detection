@@ -3,6 +3,7 @@ import re
 import torch
 import torch.nn as nn
 from transformers import AutoModel
+from memory_profiler import profile
 
 class TransformerEncoder(nn.Module):
 
@@ -34,4 +35,6 @@ class TransformerEncoder(nn.Module):
 
     def forward(self, model_input):
 
-        return self.model(**model_input)['pooler_output']
+        y = self.model(**model_input)['pooler_output']
+
+        return y

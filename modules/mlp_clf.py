@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.functional as F
+from memory_profiler import profile
 
 class MLP(nn.Module):
 
@@ -23,12 +24,12 @@ class MLP(nn.Module):
 
         self.out_dim = hidden_dims[-1]
 
+    #@profile
     def forward(self, x):
 
         y = self.mlp(x)
 
         return y
-
 
 class SF_CLF(nn.Module):
 

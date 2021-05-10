@@ -2,16 +2,14 @@ import torch
 import torch.nn as nn
 
 from modules.encoders import TransformerEncoder
-from modules.mlp_clf import MLP
+from modules.mlp_clf import MLP, SF_CLF
 
-class SeqTransformer(nn.Module):
+class SeqClassifer(nn.Module):
     def __init__(self, config):
-        """Transformer based sequence model for meta-learning. Only encodes, does not classify.
+        """Transformer based sequence model for supervised classification.
 
         Args:
-            bert_encoder ([type]): [description]
-            mlp ([type]): [description]
-            softmax_clf ([type]): [description]
+            config
         """
         super().__init__()
 
@@ -28,11 +26,14 @@ class SeqTransformer(nn.Module):
                        hidden_dims=self.hidden_dims,
                        act_fn=self.act_fn)
 
-        self.out_dim = self.mlp.out_dim
+        self.n_classes = config['n_classes']
+        self.clf = SF_CLF(n_classes=self.n_classes,
+                          hidden_dims=self.hidden_dims)
 
     def forward(self, model_input):
 
         y = self.encoder(model_input)
         y = self.mlp(y)
+        y = self.clf(y)
 
         return y
