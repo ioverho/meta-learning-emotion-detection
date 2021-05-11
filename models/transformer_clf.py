@@ -10,6 +10,6 @@ class Transformer_CLF(nn.Module):
         self.classifer = SF_CLF(config['n_classes'], config['hidden_dims'])
 
     def forward(self, text, attn_mask=None):
-        x = self.encoder(text, attn_mask)
+        x = self.encoder([text, attn_mask])
         logits = self.classifer(x)
         return logits

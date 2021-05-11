@@ -33,5 +33,5 @@ class TransformerEncoder(nn.Module):
                 param.requires_grad = False
 
     def forward(self, model_input):
-
-        return self.model(**model_input)['pooler_output']
+        # changed mapping to list of [input_ids, attn_mask]
+        return self.model(*model_input)['pooler_output']
