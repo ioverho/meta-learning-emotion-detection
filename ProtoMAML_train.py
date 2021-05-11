@@ -18,8 +18,9 @@ import torch.autograd.profiler as profiler
 from transformers import AutoTokenizer, get_constant_schedule_with_warmup
 
 from models.protomaml_seqtransformer import ProtoMAMLSeqTransformer
-from data.utils.data_loader import StratifiedLoader, AdaptiveNKShotLoader
-from data.meta_dataset import MetaDataset
+from data.utils.data_loader_numpy import StratifiedLoader#, AdaptiveNKShotLoader
+#from data.meta_dataset import MetaDataset
+from data.unified_emotion_numpy import unified_emotion
 from data.utils.sampling import dataset_sampler
 from data.utils.tokenizer import manual_tokenizer, specials
 from utils.metrics import logging_metrics
@@ -112,10 +113,9 @@ def train_episode(episode, dataset, tokenizer, config, model, timer, writer):
     task = dataset_sampler(dataset, sampling_method='sqrt')
     datasubset = dataset.datasets[task]['train']
 
-    dataloader = AdaptiveNKShotLoader(dataset=datasubset,
-                                      device=model.get_device(),
-                                      tokenizer=tokenizer,
-                                      max_support_size=config['max_support_size'])
+    dataloader = StratifiedLoader(data_subset, k=16,
+                                  shuffle=True, max_batch_size=config['max_support_size'],
+                                  tokenizer=tokenizer, device=device)
 
     # Inner loop
     # Support set
@@ -161,10 +161,8 @@ def logging(labels, logits, loss, task, n_classes, batchsize, episode, timer, wr
                 mem))
 
     if config['logging']:
-        writer.add_scalars(
-            'Loss/Train', {task: loss}, episode)
-        writer.add_scalars(
-            'Accuracy/Train', {task: acc}, episode)
+        writer.add_scalars('Loss/Train', {task: loss}, episode)
+        writer.add_scalars('Accuracy/Train', {task: acc}, episode)
         writer.add_scalars('F1/Train', {task: f1}, episode)
 
         writer.add_scalars('LossRatio/Train',
@@ -178,22 +176,22 @@ def logging(labels, logits, loss, task, n_classes, batchsize, episode, timer, wr
         writer.flush()
 
 def data_examples(dataset, tokenizer):
-        print('\nExample data')
-        for task in dataset.lens.keys():
-            datasubset = dataset.datasets[task]['train']
-            dataloader = StratifiedLoader(dataset=datasubset,
-                                          device='cpu',
-                                          k=1)
-            support_labels, support_text, _, _ = next(dataloader)
+    print('\nExample data')
+    for task in dataset.lens.keys():
+        datasubset = dataset.datasets[task]['train']
+        dataloader = StratifiedLoader(datasubset,
+                                        device='cpu',
+                                        k=1)
+        support_labels, support_text, _, _ = next(dataloader)
 
-            print(task)
+        print(task)
 
-            label_map = {v: k for k, v in dataset.label_map[task].items()}
-            tokenized_texts = list(
-                map(tokenizer.decode, tokenizer(support_text)['input_ids']))
-            for txt, label in zip(tokenized_texts, support_labels):
-                print(label_map[label], txt)
-            print()
+        label_map = {v: k for k, v in dataset.label_map[task].items()}
+        tokenized_texts = list(
+            map(tokenizer.decode, tokenizer(list(support_text))['input_ids']))
+        for txt, label in zip(tokenized_texts, support_labels):
+            print(label_map[label], txt)
+        print()
 
 #@profile
 def train(config):
@@ -225,7 +223,10 @@ def train(config):
         writer = SummaryWriter(os.path.join(log_dir, 'tensorboard'))
 
         # Load in the data
-        dataset = MetaDataset(include=config['include'], verbose=False)
+        #dataset = MetaDataset(include=config['include'], verbose=False)
+        #dataset.prep(text_tokenizer=manual_tokenizer)
+        dataset = unified_emotion(file_path="./data/datasets/unified-dataset.jsonl",
+                                  include=config['include'], verbose=False)
         dataset.prep(text_tokenizer=manual_tokenizer)
 
         # Initialization of model
@@ -276,16 +277,14 @@ def train(config):
             # Training #
             ############
 
-            task = dataset_sampler(
-                dataset, sampling_method='sqrt')
+            task = dataset_sampler(dataset, sampling_method='sqrt')
             datasubset = dataset.datasets[task]['train']
 
-            dataloader = AdaptiveNKShotLoader(dataset=datasubset,
-                                              device=model.get_device(),
-                                              tokenizer=tokenizer,
-                                              max_support_size=config['max_support_size'])
+            dataloader = StratifiedLoader(datasubset, k=16,
+                                          shuffle=True, max_batch_size=config['max_support_size'],
+                                          tokenizer=tokenizer, device=device, classes_subset=False)
 
-            for ii in range(config['n_outer']):
+            for _ in range(config['n_outer']):
 
                 #train_episode(episode, dataset, tokenizer, config, model, timer, writer)
 
@@ -350,7 +349,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     ## Dataset Initialization Hyperparameters
-    parser.add_argument('--include', type=str, nargs='+', default=['crowdflower', 'dailydialog', 'electoraltweets', 'emoint'],  # ['crowdflower', 'dailydialog', 'electoraltweets', 'emoint', 'emotion-cause', 'grounded_emotions', 'go_emotions', 'ssec', 'tec'],
+    parser.add_argument('--include', type=str, nargs='+', default=['dailydialog', 'emoint', 'grounded_emotions'],  # ['crowdflower', 'dailydialog', 'electoraltweets', 'emoint', 'emotion-cause', 'grounded_emotions', 'go_emotions', 'ssec', 'tec'],
                         choices=['crowdflower', 'dailydialog', 'electoraltweets', 'emoint', 'emotion-cause', 'grounded_emotions', 'go_emotions', 'ssec', 'tec'],
                         help='Datasets to include.')
 

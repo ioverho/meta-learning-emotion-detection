@@ -1,3 +1,4 @@
+import re
 from copy import deepcopy
 
 from memory_profiler import profile
@@ -5,8 +6,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from transformers import AutoModel
 
 from models.seqtransformer import SeqTransformer
+from modules.mlp_clf import MLP
 
 class ProtoMAMLSeqTransformer(nn.Module):
 
@@ -19,9 +22,11 @@ class ProtoMAMLSeqTransformer(nn.Module):
         super().__init__()
 
         self.model_shared = SeqTransformer(config)
-        self.model_task = deepcopy(self.model_shared)
+        self.model_task = None
 
         self.n_inner = config['n_inner']
+        self.n_outer = config['n_outer']
+
         self.inner_lr = config['inner_lr']
         self.output_lr = config['output_lr']
         self.lossfn = config['lossfn']()
@@ -37,22 +42,24 @@ class ProtoMAMLSeqTransformer(nn.Module):
         """
 
         self.model_shared.train()
-        self.model_task.train()
+        if self.model_task != None:
+            self.model_task.train()
 
     def eval(self):
         """Set model(s) to eval.
         """
 
         self.model_shared.eval()
-        self.model_task.eval()
+        if self.model_task != None:
+            self.model_task.eval()
 
     def get_device(self):
         """
         Hacky method for checking model device.
         Requires all parameters to be on same device.
         """
-        assert next(self.model_shared.parameters()).device == next(self.model_task.parameters()).device,\
-            "Models' devices do not match"
+        #assert next(self.model_shared.parameters()).device == next(self.model_task.parameters()).device,\
+        #    "Models' devices do not match"
 
         self.device = next(self.model_shared.parameters()).device
 
@@ -197,9 +204,9 @@ class ProtoMAMLSeqTransformer(nn.Module):
         # Accumulate gradients
         for param, g_task, g_shared in zip(self._get_updateable_parameters(self.model_shared), task_grads, shared_grads):
             if param.grad == None:
-                param.grad = g_shared + g_task
+                param.grad = (g_shared + g_task) / self.n_outer
             else:
-                param.grad += g_shared + g_task
+                param.grad += (g_shared + g_task) / self.n_outer
 
         if self.clip_val > 0:
             torch.nn.utils.clip_grad_norm_(self._get_updateable_parameters(self.model_shared),

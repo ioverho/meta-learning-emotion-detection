@@ -18,7 +18,7 @@ def _data_to_model_input(support_labels, support_text, query_labels, query_text,
     return support_labels, support_text, query_labels, query_text
 
 class StratifiedLoader():
-    def __init__(self, data_subset, k, tokenizer=None, device=None, shuffle=True, max_batch_size=None):
+    def __init__(self, data_subset, k, tokenizer=None, device=None, shuffle=True, max_batch_size=None, classes_subset=False, verbose=False):
         """
         Class that acts as dataloader.
         Applies stratified sampling, such that every batch has N (classes) k-shots.
@@ -37,6 +37,13 @@ class StratifiedLoader():
         self.data_subset = data_subset
         self.labels = list(self.data_subset.keys())
 
+        if classes_subset:
+            self.n_classes = min(np.random.randint(2, len(self.labels)),
+                                len(self.labels))
+            np.random.choice(self.labels, size=self.n_classes)
+        else:
+            self.n_classes = len(self.labels)
+
         if shuffle:
             for c in self.labels:
                 np.random.shuffle(self.data_subset[c])
@@ -45,7 +52,8 @@ class StratifiedLoader():
         if max_batch_size != None and (self.k * len(self.labels)) > max_batch_size:
             transgression = max_batch_size / (self.k * len(self.labels))
             self.k = int(transgression * self.k)
-            print(f"Maximum batch size exceeded. Limiting k to {self.k}.")
+            if verbose:
+                print(f"Maximum batch size exceeded. Limiting k to {self.k}.")
 
         self.i = 1
 

@@ -71,9 +71,9 @@ class unified_emotion():
                 # Saves the mapping if this is the first line of a dataset
                 labels = {k: v for k, v in sorted(line['emotions'].items())
                           if v != None}
-                if id == 0:
-                    label_map[source] = {k: i for i,
-                                        (k, _) in enumerate(labels.items())}
+                #if id == 0:
+                #    label_map[source] = {k: i for i,
+                #                        (k, _) in enumerate(labels.items())}
 
                 # All present emotions (labels > 1)
                 present_emotions = [emotion for emotion,
@@ -103,12 +103,12 @@ class unified_emotion():
                 # If more than 1 emotion is present, multiple examples are created
                 if (not self.first_label_only):
                     for i, emotion in enumerate(present_emotions):
-                        label = label_map[source][emotion]
+                        label = emotion #label_map[source][emotion]
 
                         datasets[source][split][label].append(text)
                         source_lengths[source] = id + i + 1
                 else:
-                    label = label_map[source][present_emotions[0]]
+                    label = present_emotions[0] #label_map[source][present_emotions[0]]
 
                     datasets[source][split][label].append(text)
                     source_lengths[source] = id + 1
@@ -125,12 +125,10 @@ class unified_emotion():
 
                 del datasets[source]['all']
 
-        self.datasets = datasets
-        self.source_lengths = source_lengths
-        self.label_map = label_map
+        #self.label_map = label_map
 
-        self.inv_label_map = {source: {val: key for key,
-                                val in label_map[source].items()} for source in label_map.keys()}
+        #self.inv_label_map = {source: {val: key for key,
+        #                        val in label_map[source].items()} for source in label_map.keys()}
 
         # Remove classes with limited data
         total_removed, total_data_removed = 0, 0
@@ -146,11 +144,12 @@ class unified_emotion():
                 if (not keep):
                     if self.verbose:
                         print("Removed {:}/{:} for too little data |train|={}, |test|={}".
-                            format(source, self.inv_label_map[source][c], train_size, test_size))
+                            format(source, c, train_size, test_size))
+                        #self.inv_label_map[source][c]
                     total_removed += 1
                     total_data_removed += train_size + test_size
 
-                    self.source_lengths[source] -= train_size + test_size
+                    source_lengths[source] -= train_size + test_size
 
                     removing.append((source, c))
 
@@ -170,6 +169,25 @@ class unified_emotion():
             for split in datasets[source].keys():
                 for c in datasets[source][split].keys():
                     datasets[source][split][c] = np.stack(datasets[source][split][c])
+
+        # Create a label map for emotion -> int
+        label_map = dict()
+        inv_label_map = dict()
+        for source in datasets.keys():
+            label_map[source] = {emotion: i for i, emotion in
+                                 enumerate(sorted(datasets[source]\
+                                     ['train'].keys()))}
+            inv_label_map[source] = {v: k for k,
+                                       v in label_map[source].items()}
+
+        for source in datasets.keys():
+            for split in datasets[source].keys():
+                datasets[source][split] = {label_map[source][c]: v for c, v in datasets[source][split].items()}
+
+        self.datasets = datasets
+        self.source_lengths = source_lengths
+        self.label_map = label_map
+        self.inv_label_map = inv_label_map
 
     @property
     def lens(self):
