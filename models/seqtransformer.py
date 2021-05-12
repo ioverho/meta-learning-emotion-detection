@@ -5,7 +5,7 @@ from modules.encoders import TransformerEncoder
 from modules.mlp_clf import MLP
 
 class SeqTransformer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, args):
         """Transformer based sequence model for meta-learning. Only encodes, does not classify.
 
         Args:
@@ -15,14 +15,14 @@ class SeqTransformer(nn.Module):
         """
         super().__init__()
 
-        self.pt_encoder = config['encoder_name']
-        self.nu = config['nu']
+        self.pt_encoder = args.encoder_name
+        self.nu = args.nu
 
         self.encoder = TransformerEncoder(name=self.pt_encoder,
                                           nu=self.nu)
 
-        self.hidden_dims = config['hidden_dims']
-        self.act_fn = nn.ReLU if config['act_fn'] == 'ReLU' else nn.Tanh
+        self.hidden_dims = args.hidden_dims
+        self.act_fn = nn.ReLU if args.act_fn == 'ReLU' else nn.Tanh
 
         self.mlp = MLP(encoder_output_size=self.encoder.model.config.hidden_size,
                        hidden_dims=self.hidden_dims,
