@@ -34,4 +34,4 @@ class TransformerEncoder(nn.Module):
 
     def forward(self, model_input):
         # changed mapping to list of [input_ids, attn_mask]
-        return self.model(*model_input)['pooler_output']
+        return self.model(**model_input)['pooler_output']
