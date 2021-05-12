@@ -9,7 +9,8 @@ class Transformer_CLF(nn.Module):
         self.encoder = SeqTransformer(args)
         self.classifer = SF_CLF(args.num_classes, args.hidden_dims)
 
-    def forward(self, model_input):
+    def forward(self, text, attn_mask):
+        model_input = {'input_ids':text, 'attention_mask':attn_mask}
         x = self.encoder(model_input)
         logits = self.classifer(x)
         return logits
