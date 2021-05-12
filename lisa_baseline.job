@@ -22,4 +22,6 @@ cd $HOME/meta-learning-emotion-detection/
 # Activate your environment
 source activate ATCS
 # Run your code
+srun pip install pytorch-lightning
+strun pip install spacy
 srun python -u baseline_train.py
