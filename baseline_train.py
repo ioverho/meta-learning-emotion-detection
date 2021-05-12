@@ -6,6 +6,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 import torch
 import torch.nn as nn
 import numpy as np
+import psutil
 
 import torch.nn.functional as F
 import torch.optim as optim
@@ -45,10 +46,16 @@ class CustomDataset(Dataset):
 
 def extract_dataloaders(dataset, tokenizer, device, batch_size=8, extract='go_emotions', shuffle=True, num_workers=0):
     data_splits = {}
-    for split in dataset[extract].keys():
-        data_split = CustomDataset(dataset[extract][split], tokenizer, device)
-        data_split_loader = torch.utils.data.DataLoader(data_split, shuffle=shuffle, batch_size=batch_size, num_workers=num_workers)
-        data_splits[split] = data_split_loader
+    if extract == 'go_emotions':
+        for split in dataset[extract].keys():
+            data_split = CustomDataset(dataset[extract][split], tokenizer, device)
+            data_split_loader = torch.utils.data.DataLoader(data_split, shuffle=shuffle, batch_size=batch_size, num_workers=num_workers)
+            data_splits[split] = data_split_loader
+    else:
+        for split in dataset.datasets[extract].keys():
+            data_split = CustomDataset(dataset[extract][split], tokenizer, device)
+            data_split_loader = torch.utils.data.DataLoader(data_split, shuffle=shuffle, batch_size=batch_size, num_workers=num_workers)
+            data_splits[split] = data_split_loader
 
     return data_splits
 
@@ -86,6 +93,10 @@ class CLFTrainer(pl.LightningModule):
         loss = self.loss_module(preds, labels)
         acc = (preds.argmax(dim=-1) == labels).float().mean()
 
+        # calculate the memory usage
+        mem = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3
+
+        self.log('mem_usage', mem, prog_bar=True)
         self.log('train_acc', acc, on_step=False, on_epoch=True) # Logs the accuracy per epoch to tensorboard (weighted average over batches)
         self.log('train_loss', loss)
         return loss # Return tensor to call ".backward" on
@@ -131,6 +142,7 @@ def main(args):
     print('Checkpoint path: {}'.format(args.checkpoint_path))
     print('Version: {}'.format(args.version))
     print('Seed: {}'.format(args.seed))
+    print('Show progress bar: {}'.format(args.progress_bar))
     print('PyTorch device: {}'.format(device))
     print('-----------------------------')
 
@@ -146,7 +158,7 @@ def main(args):
 
     # create dataloaders for the dataset
     print("Creating dataloaders..")
-    data_loaders = extract_dataloaders(dataset, tokenizer, device, args.batch_size)
+    data_loaders = extract_dataloaders(dataset, tokenizer, device, args.batch_size, extract=args.include[0])
     train_loader = data_loaders['train']
     validation_loader = data_loaders['validation']
     test_loader = data_loaders['test']
@@ -159,7 +171,7 @@ def main(args):
                          checkpoint_callback=checkpoint_callback,
                          gpus=1 if str(device)=="cuda" else 0,
                          max_epochs=args.max_epochs,
-                         progress_bar_refresh_rate=1
+                         progress_bar_refresh_rate=1 if args.progress_bar else 0
                          )
     trainer.logger._log_graph = False
     trainer.logger._default_hp_metric = None
@@ -193,7 +205,7 @@ if __name__ == '__main__':
                         help='Hidden dimensions for the model. Default is [256, 128]')
     parser.add_argument('--include', default=['go_emotions'], type=str, nargs='*',
                         help='Which datasets to include. Default is [go_emotions]',
-                        choices=['go_emotions'])
+                        choices=['go_emotions', 'crowdflower'])
     parser.add_argument('--num_classes', default=27, type=int,
                         help='Number of classes of the dataset. Default is 27')
     parser.add_argument('--act_fn', default='Tanh', type=str,
@@ -221,6 +233,9 @@ if __name__ == '__main__':
     # other hyperparameters
     parser.add_argument('--seed', default=1234, type=int,
                         help='Seed to use for reproducing results. Default is 1234')
+    parser.add_argument('--progress_bar', action='store_true',
+                        help=('Use a progress bar indicator for interactive experimentation. '
+                              'Not to be used in conjuction with SLURM jobs'))
 
     # parse the arguments
     args = parser.parse_args()

@@ -23,7 +23,7 @@ class unified_emotion():
     """Class for the 'Unified Emotion Dataset'. Data from https://github.com/sarnthil/unify-emotion-datasets.
     """
 
-    def __init__(self, file_path, include=['grounded_emotions'], split_ratio=0.8, verbose=False, first_label_only=False):
+    def __init__(self, file_path, include=['grounded_emotions'], split_ratio=0.7, verbose=False, first_label_only=False):
         """
         Class for the 'Unified Emotion Dataset'.
         Data from https://github.com/sarnthil/unify-emotion-datasets.
@@ -123,7 +123,9 @@ class unified_emotion():
                 for c, l in class_lengths.items():
                     train_l = int(self.split_ratio * l)
                     datasets[source]['train'][c] = datasets[source]['all'][c][:train_l]
-                    datasets[source]['test'][c] = datasets[source]['all'][c][train_l:]
+                    val_l = train_l + int((1 - self.split_ratio) * l * 0.5)
+                    datasets[source]['validation'][c] = datasets[source]['all'][c][train_l:val_l]
+                    datasets[source]['test'][c] = datasets[source]['all'][c][val_l:]
 
                 del datasets[source]['all']
 
@@ -141,9 +143,10 @@ class unified_emotion():
             n_classes = len(datasets[source]['train'].keys())
             for c in datasets[source]['train'].keys():
                 train_size = len(datasets[source]['train'][c])
+                val_size = len(datasets[source]['validation'][c])
                 test_size = len(datasets[source]['test'][c])
 
-                keep = (train_size >= 96 and test_size >= 64)
+                keep = (train_size >= 96 and val_size >= 64 and test_size >= 64)
 
                 if (not keep):
                     if self.verbose:
@@ -158,6 +161,7 @@ class unified_emotion():
 
         for source, c in removing:
             del datasets[source]['train'][c]
+            del datasets[source]['validation'][c]
             del datasets[source]['test'][c]
 
         if self.verbose:
