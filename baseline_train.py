@@ -79,8 +79,7 @@ class CLFTrainer(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), self.args.lr)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.99)
-        return [optimizer], [scheduler]
+        return optimizer
 
 
     def encode(self, text, attn_mask=None):
