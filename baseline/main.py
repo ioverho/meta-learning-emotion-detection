@@ -12,6 +12,7 @@ from transformers import BertTokenizer
 # own imports
 from data.load_goemotions_data import LoadGoEmotions
 from data.load_unifiedemotions_data import LoadUnifiedEmotions
+from data.utils.tokenizer import specials
 from utils import create_dataloader, handle_epoch_metrics, create_path, initialize_model
 
 # set Huggingface logging to error only
@@ -234,7 +235,7 @@ def main(args):
         os.makedirs(path)
 
     # load the tokenizer
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', additional_special_tokens=specials())
 
     # load the datasets
     print('Loading datasets..')
@@ -246,7 +247,7 @@ def main(args):
 
     # load the model
     print('Loading model..')
-    model, optimizer = initialize_model(args, device, num_classes)
+    model, optimizer = initialize_model(args, device, tokenizer, num_classes)
     print('Model loaded')
 
     # check if a checkpoint is provided

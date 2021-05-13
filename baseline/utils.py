@@ -31,12 +31,13 @@ def create_path(args):
     return path
 
 
-def initialize_model(args, device, num_classes):
+def initialize_model(args, device, tokenizer, num_classes):
     """
     Function that initializes the model, tokenizer and optimizer.
     Inputs:
         args - Namespace object from the argument parser
         device - PyTorch device to use
+        tokenizer - BERT tokenizer instance
         num_classes - Number of classes of the dataset
     Outputs:
         model - MultiTask BERT model instance
@@ -45,6 +46,7 @@ def initialize_model(args, device, num_classes):
 
     # load the model
     model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=num_classes).to(device)
+    model.resize_token_embeddings(len(tokenizer.vocab) + 3)
 
     # create the optimizer
     no_decay = ['bias', 'LayerNorm.weight']
