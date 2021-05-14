@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from transformers import AutoModel
 
 from models.seqtransformer import SeqTransformer
 from modules.mlp_clf import MLP
@@ -68,7 +67,6 @@ class ProtoMAMLSeqTransformer(nn.Module):
     def _get_updateable_parameters(self, model):
         return [param for param in model.parameters() if param.requires_grad]
 
-    #@profile
     def forward(self, model_input):
         """
         Task-specific classification of a sequence.
@@ -92,7 +90,6 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         return logits
 
-    #@profile
     def _generate_protoypes(self, labels, model_input):
 
         y = self.model_shared(model_input)
@@ -136,10 +133,11 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         # Clone model for task specific episode model
         del self.model_task, self.W_task, self.b_task
-        self.model_task = deepcopy(self.model_shared)
+        self.model_task = deepcopy(self.model_shared)#.to(self.get_device())
+        self.model_task.zero_grad()
 
-        task_optimizer = optim.SGD(self.model_task.parameters(),
-                                   lr=self.inner_lr)
+        #task_optimizer = optim.SGD(self.model_task.parameters(),
+        #                           lr=self.inner_lr)
 
         # Generate initial classification weights
         W_init, b_init = self.generate_clf_weights(labels, model_input)
@@ -148,7 +146,7 @@ class ProtoMAMLSeqTransformer(nn.Module):
         self.W_task, self.b_task = W_init.detach(), b_init.detach()
         self.W_task.requires_grad, self.b_task.requires_grad = True, True
 
-        output_optimizer = optim.SGD([self.W_task, self.b_task], lr=self.output_lr)
+        #output_optimizer = optim.SGD([self.W_task, self.b_task], lr=self.output_lr)
 
         for i in range(self.n_inner):
 
@@ -172,11 +170,11 @@ class ProtoMAMLSeqTransformer(nn.Module):
                                                self.clip_val)
 
             # Update the parameters
-            output_optimizer.step()
-            task_optimizer.step()
+            #output_optimizer.step()
+            #task_optimizer.step()
 
-            output_optimizer.zero_grad()
-            task_optimizer.zero_grad()
+            #output_optimizer.zero_grad()
+            #task_optimizer.zero_grad()
 
             if verbose:
                 print("\tInner {} | Loss {:.4E}".format(
@@ -187,6 +185,7 @@ class ProtoMAMLSeqTransformer(nn.Module):
         self.W_task = W_init + (self.W_task - W_init).detach()
         self.b_task = b_init + (self.b_task - b_init).detach()
 
+    #@profile
     def backward(self, loss):
         """Backpropagate a loss on the task-specific model to the shared model parameters
 
@@ -204,9 +203,9 @@ class ProtoMAMLSeqTransformer(nn.Module):
         # Accumulate gradients
         for param, g_task, g_shared in zip(self._get_updateable_parameters(self.model_shared), task_grads, shared_grads):
             if param.grad == None:
-                param.grad = (g_shared + g_task) / self.n_outer
+                param.grad = (g_shared + g_task).detach() / self.n_outer
             else:
-                param.grad += (g_shared + g_task) / self.n_outer
+                param.grad += (g_shared + g_task).detach() / self.n_outer
 
         if self.clip_val > 0:
             torch.nn.utils.clip_grad_norm_(self._get_updateable_parameters(self.model_shared),

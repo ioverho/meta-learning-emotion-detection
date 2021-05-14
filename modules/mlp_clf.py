@@ -24,7 +24,6 @@ class MLP(nn.Module):
 
         self.out_dim = hidden_dims[-1]
 
-    #@profile
     def forward(self, x):
 
         y = self.mlp(x)

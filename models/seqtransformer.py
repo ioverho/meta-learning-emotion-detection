@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from modules.encoders import TransformerEncoder
+from modules.encoders import TransformerEncoder, AWEEncoder
 from modules.mlp_clf import MLP
 
 class SeqTransformer(nn.Module):
@@ -15,16 +15,20 @@ class SeqTransformer(nn.Module):
         """
         super().__init__()
 
-        self.pt_encoder = config['encoder_name']
-        self.nu = config['nu']
+        if config['encoder_name'].lower() == 'random':
+            self.encoder = AWEEncoder(config['vocab_length'], out_dim=768,
+                                      padding_idx=0, freeze=True)
+        else:
+            self.pt_encoder = config['encoder_name']
+            self.nu = config['nu']
 
-        self.encoder = TransformerEncoder(name=self.pt_encoder,
-                                          nu=self.nu)
+            self.encoder = TransformerEncoder(name=self.pt_encoder,
+                                              nu=self.nu)
 
         self.hidden_dims = config['hidden_dims']
         self.act_fn = nn.ReLU if config['act_fn'] == 'ReLU' else nn.Tanh
 
-        self.mlp = MLP(encoder_output_size=self.encoder.model.config.hidden_size,
+        self.mlp = MLP(encoder_output_size=self.encoder.out_dim,
                        hidden_dims=self.hidden_dims,
                        act_fn=self.act_fn)
 
