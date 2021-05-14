@@ -42,8 +42,7 @@ def perform_step(model, optimizer, batch, device, train=True):
     token_type_ids = batch['token_type_ids'].to(device)
 
     # pass the batch through the model
-    outputs = model(input_ids, attention_mask=attention_mask, labels=batch_labels, token_type_ids=token_type_ids)
-    loss = outputs.loss
+    predictions, loss = model(input_ids, attention_mask=attention_mask, labels=batch_labels, token_type_ids=token_type_ids)
 
     if train:
         # backward using the loss
@@ -54,7 +53,7 @@ def perform_step(model, optimizer, batch, device, train=True):
         optimizer.zero_grad()
 
     # return the loss, label and prediction
-    return loss, outputs.logits, batch_labels
+    return loss, predictions, batch_labels
 
 
 def perform_epoch(args, model, optimizer, dataset, device, train=True):

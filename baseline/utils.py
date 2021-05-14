@@ -7,9 +7,12 @@ from sklearn.metrics import f1_score, accuracy_score, precision_recall_fscore_su
 
 # huggingface imports
 import transformers
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import BertTokenizer
 from transformers import AdamW
 from transformers.data.data_collator import DataCollatorWithPadding
+
+# own imports
+from models.custombert import CustomBERT
 
 
 def create_path(args):
@@ -45,8 +48,8 @@ def initialize_model(args, device, tokenizer, num_classes):
     """
 
     # load the model
-    model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=num_classes).to(device)
-    model.resize_token_embeddings(len(tokenizer.vocab) + 3)
+    model = CustomBERT(num_classes).to(device)
+    model.encoder.model.resize_token_embeddings(len(tokenizer.vocab) + 3)
 
     # create the optimizer
     no_decay = ['bias', 'LayerNorm.weight']
