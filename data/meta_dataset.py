@@ -1,9 +1,8 @@
-from data.unified_emotion import unified_emotion
-from data.go_emotions import go_emotions
+from data.unified_emotion_numpy import unified_emotion
+from data.go_emotions_numpy import go_emotions
 from data.utils.tokenizer import manual_tokenizer
 
-
-class MetaDataset():
+class meta_dataset():
     def __init__(self, unified_file_path="./data/datasets/unified-dataset.jsonl",
                  include=['crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
                           'emotion-cause', 'grounded_emotions', 'ssec', 'tec', 'go_emotions'],
