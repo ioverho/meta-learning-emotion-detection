@@ -18,7 +18,7 @@ def _data_to_model_input(support_labels, support_text, query_labels, query_text,
     return support_labels, support_text, query_labels, query_text
 
 class StratifiedLoader():
-    def __init__(self, data_subset, k, tokenizer=None, device=None, shuffle=True, max_batch_size=None, classes_subset=False, verbose=False):
+    def __init__(self, data_subset, k, tokenizer=None, device=None, shuffle=True, max_batch_size=None, verbose=False):
         """
         Class that acts as dataloader.
         Applies stratified sampling, such that every batch has N (classes) k-shots.
@@ -37,12 +37,7 @@ class StratifiedLoader():
         self.data_subset = data_subset
         self.labels = list(self.data_subset.keys())
 
-        if classes_subset:
-            self.n_classes = min(np.random.randint(2, len(self.labels)),
-                                len(self.labels))
-            np.random.choice(self.labels, size=self.n_classes)
-        else:
-            self.n_classes = len(self.labels)
+        self.n_classes = len(self.labels)
 
         if shuffle:
             for c in self.labels:
@@ -57,6 +52,7 @@ class StratifiedLoader():
 
         self.i = 1
 
+        self.verbose = verbose
         self.device = 'cpu' if device == None else device
         self.tokenizer = tokenizer
 
@@ -97,44 +93,8 @@ class StratifiedLoader():
                                         self.tokenizer, self.device)
         else:
             return support_labels, support_text, query_labels, query_text
-
-class RandomTextLoader():
-    def __init__(self, tokenizer, batch_size, device=None):
-
-        self.batch_size = batch_size
-        self.device = torch.device('cpu') if device == None else device
-        self.n_classes = np.random.randint(2, 7)
-
-        self.tokenizer = tokenizer
-        self.inv_map = {v: k for k, v in tokenizer.vocab.items()}
-
-    def return_some_random(self):
-
-        sents = []
-        for i in range(self.batch_size):
-            sent_len = np.random.randint(5, 16)
-            sent = ' '.join(map(lambda x: self.inv_map[x], np.random.randint(5000, 7000, sent_len)))
-            sents.append(sent)
-
-        text = self.tokenizer(list(sents),
-                              return_tensors='pt',
-                              padding=True).to(self.device)
-
-
-        labels = torch.LongTensor(np.concatenate([[i for c in range(int(self.batch_size / self.n_classes)+1)]
-                                                  for i in range(self.n_classes)]))[:self.batch_size].to(self.device)
-
-        return labels, text
-
-    def __next__(self):
-
-        support_labels, support_text = self.return_some_random()
-        query_labels, query_text = self.return_some_random()
-
-        return support_labels, support_text, query_labels, query_text
-
 class StratifiedLoaderwClassesSubset():
-    def __init__(self, data_subset, k, tokenizer=None, device=None, shuffle=True, max_batch_size=None, verbose=False):
+    def __init__(self, data_subset, k, max_classes=8, tokenizer=None, device=None, shuffle=True, max_batch_size=None, verbose=False):
         """
         Class that acts as dataloader.
         Applies stratified sampling, such that every batch has N (classes) k-shots.
@@ -151,7 +111,8 @@ class StratifiedLoaderwClassesSubset():
 
         self.data_subset = data_subset
 
-        self.n_classes = np.random.randint(2, min(len(data_subset.keys()), 6)+1)
+        self.n_classes = np.random.randint(2, min(len(data_subset.keys()),
+                                                  max_classes)+1)
 
         self.labels = np.random.choice(list(data_subset.keys()),
                                        self.n_classes, replace=False)
@@ -172,6 +133,7 @@ class StratifiedLoaderwClassesSubset():
 
         self.i = 1
 
+        self.verbose = verbose
         self.device = 'cpu' if device == None else device
         self.tokenizer = tokenizer
 
@@ -198,8 +160,9 @@ class StratifiedLoaderwClassesSubset():
         if len(support_text) != (self.k * len(self.labels)) or \
             len(query_text) != (self.k * len(self.labels)) or \
                 len(support_text) != len(query_text):
-            print("No longer able to generate stratified sample.\
-                Reshuffling and resampling.")
+            if self.verbose:
+                print("No longer able to generate stratified sample.\
+                    Reshuffling and resampling.")
             for c in self.labels:
                 np.random.shuffle(self.data_subset[c])
             self.i = 1
@@ -212,3 +175,39 @@ class StratifiedLoaderwClassesSubset():
                                         self.tokenizer, self.device)
         else:
             return support_labels, support_text, query_labels, query_text
+
+
+class RandomTextLoader():
+    def __init__(self, tokenizer, batch_size, device=None):
+
+        self.batch_size = batch_size
+        self.device = torch.device('cpu') if device == None else device
+        self.n_classes = np.random.randint(2, 7)
+
+        self.tokenizer = tokenizer
+        self.inv_map = {v: k for k, v in tokenizer.vocab.items()}
+
+    def return_some_random(self):
+
+        sents = []
+        for i in range(self.batch_size):
+            sent_len = np.random.randint(5, 16)
+            sent = ' '.join(
+                map(lambda x: self.inv_map[x], np.random.randint(5000, 7000, sent_len)))
+            sents.append(sent)
+
+        text = self.tokenizer(list(sents),
+                              return_tensors='pt',
+                              padding=True).to(self.device)
+
+        labels = torch.LongTensor(np.concatenate([[i for c in range(int(self.batch_size / self.n_classes)+1)]
+                                                  for i in range(self.n_classes)]))[:self.batch_size].to(self.device)
+
+        return labels, text
+
+    def __next__(self):
+
+        support_labels, support_text = self.return_some_random()
+        query_labels, query_text = self.return_some_random()
+
+        return support_labels, support_text, query_labels, query_text
