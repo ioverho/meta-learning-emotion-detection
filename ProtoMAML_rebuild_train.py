@@ -3,6 +3,7 @@ from copy import deepcopy
 import pickle
 import argparse
 import re
+from distutils.util import strtobool
 
 import numpy as np
 import psutil
@@ -548,13 +549,13 @@ if __name__ == '__main__':
                         help='Name of current run version. Default is debug')
 
     # Other hyperparameters
-    parser.add_argument('--gpu', default=True, action='store_true',
+    parser.add_argument('--gpu', default=True, type=lambda x: bool(strtobool(x)),
                         help='Whether to use a GPU.')
 
-    parser.add_argument('--print_inner_loss', default=False,
+    parser.add_argument('--print_inner_loss', default=False, type=lambda x: bool(strtobool(x)),
                         help='Whether or not to print the inner losses. Default is False.')
 
-    parser.add_argument('--print_scaled', default=True,
+    parser.add_argument('--print_scaled', default=True, type=lambda x: bool(strtobool(x)),
                         help='Whether or not to print metrics scaled to random. Default is True.')
 
     # parse the arguments
