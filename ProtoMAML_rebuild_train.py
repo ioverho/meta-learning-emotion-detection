@@ -21,6 +21,7 @@ from data.utils.data_loader_numpy import StratifiedLoader, StratifiedLoaderwClas
 from data.utils.sampling import dataset_sampler
 from utils.metrics import logging_metrics
 from utils.timing import Timer
+from utils.seed import set_seed
 
 
 def train(args):
@@ -115,14 +116,14 @@ def train(args):
 
             inner_loss = loss_fn(logits, support_labels)
 
-            W_task_grad, b_task_grad = torch.autograd.grad(
-                inner_loss, [W_task, b_task], retain_graph=True)
+            W_task_grad, b_task_grad = torch.autograd.grad(inner_loss,\
+                [W_task, b_task], retain_graph=True)
 
             inner_loss.backward()
 
             if args['clip_val'] > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    model_task.parameters(), args['clip_val'])
+                torch.nn.utils.clip_grad_norm_(model_task.parameters(),
+                                               args['clip_val'])
 
             model_task_optimizer.step()
 
@@ -150,13 +151,12 @@ def train(args):
 
         if mode == "train":
             model_task_params = [param for param in model_task.parameters() if param.requires_grad]
-            model_task_grads = torch.autograd.grad(
-                outer_loss, model_task_params, retain_graph=True)
+            model_task_grads = torch.autograd.grad(outer_loss, model_task_params,
+                                                   retain_graph=True)
 
-            model_init_params = [
-                param for param in model_init.parameters() if param.requires_grad]
-            model_init_grads = torch.autograd.grad(
-                outer_loss, model_init_params, retain_graph=False)
+            model_init_params = [param for param in model_init.parameters() if param.requires_grad]
+            model_init_grads = torch.autograd.grad(outer_loss, model_init_params,
+                                                   retain_graph=False)
 
             model_init_grads = model_init_grads + model_task_grads
 
@@ -167,6 +167,10 @@ def train(args):
                     param.grad = grad.detach()
         else:
             del model_task, W_task, b_task, W_task_grad, b_task_grad, prototypes, W_init, b_init
+
+        if outer_loss.detach().cpu().item() > 10:
+            print(outer_loss.detach().cpu().item(),
+                  inner_loss.detach().cpu().item())
 
         return logits.detach(), outer_loss.detach()
 
@@ -188,6 +192,8 @@ def train(args):
     ##########################
     # Device, Logging, Timer #
     ##########################
+
+    set_seed(args['seed'])
 
     timer = Timer()
 
@@ -224,7 +230,7 @@ def train(args):
     # Training loop #
     #################
 
-    best_overall_f1_s = 0.0
+    best_overall_acc_s = 0.0
     curr_patience = args['patience']
 
     for episode in range(1, args['max_episodes']+1):
@@ -278,13 +284,13 @@ def train(args):
                 f1_s if args['print_scaled'] else f1,
                 psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3))
 
-            writer.add_scalars('Loss/Train', {'task': outer_loss_}, episode)
-            writer.add_scalars('Accuracy/Train', {'task': acc}, episode)
-            writer.add_scalars('F1/Train', {'task': f1}, episode)
+            writer.add_scalars('Loss/Train', {task: outer_loss_}, episode)
+            writer.add_scalars('Accuracy/Train', {task: acc}, episode)
+            writer.add_scalars('F1/Train', {task: f1}, episode)
 
-            writer.add_scalars('LossScaled/Train', {'task': outer_loss_s}, episode)
-            writer.add_scalars('AccuracyScaled/Train', {'task': acc_s}, episode)
-            writer.add_scalars('F1Scaled/Train', {'task': f1_s}, episode)
+            writer.add_scalars('LossScaled/Train', {task: outer_loss_s}, episode)
+            writer.add_scalars('AccuracyScaled/Train', {task: acc_s}, episode)
+            writer.add_scalars('F1Scaled/Train', {task: f1_s}, episode)
 
             writer.flush()
 
@@ -332,7 +338,7 @@ def train(args):
             # Individual Task #
             ###################
             for task in dataset.lens.keys():
-                datasubset = dataset.datasets[task]['test']
+                datasubset = dataset.datasets[task]['validation']
 
                 task_loss, task_acc, task_f1 = [], [], []
                 task_loss_s, task_acc_s, task_f1_s = [], [], []
@@ -372,13 +378,13 @@ def train(args):
                     overall_f1_s[-1] if args['print_scaled'] else overall_f1[-1],
                     psutil.Process(os.getpid()).memory_info().rss / 1024 ** 3))
 
-                writer.add_scalars('Loss/Eval', {'task': overall_loss[-1]}, episode)
-                writer.add_scalars('Accuracy/Eval', {'task': overall_acc[-1]}, episode)
-                writer.add_scalars('F1/Eval', {'task': overall_f1[-1]}, episode)
+                writer.add_scalars('Loss/Eval', {task: overall_loss[-1]}, episode)
+                writer.add_scalars('Accuracy/Eval', {task: overall_acc[-1]}, episode)
+                writer.add_scalars('F1/Eval', {task: overall_f1[-1]}, episode)
 
-                writer.add_scalars('LossScaled/Eval', {'task': overall_loss_s[-1]}, episode)
-                writer.add_scalars('AccuracyScaled/Eval', {'task': overall_acc_s[-1]}, episode)
-                writer.add_scalars('F1Scaled/Eval', {'task': overall_f1_s[-1]}, episode)
+                writer.add_scalars('LossScaled/Eval', {task: overall_loss_s[-1]}, episode)
+                writer.add_scalars('AccuracyScaled/Eval', {task: overall_acc_s[-1]}, episode)
+                writer.add_scalars('F1Scaled/Eval', {task: overall_f1_s[-1]}, episode)
 
                 writer.flush()
 
@@ -413,26 +419,26 @@ def train(args):
             #####################
             # Best Model Saving #
             #####################
-            if overall_f1_s >= best_overall_f1_s:
+            if overall_acc_s >= best_overall_acc_s:
                 for file in os.listdir(checkpoint_save_path):
                     if 'best_model' in file:
-                        ep = re.match(r".+macrof1s_\[(.+)\]", file)
+                        ep = re.match(r".+macroaccs_\[(.+)\]", file)
                         if float(ep.group(1)):
                             os.remove(os.path.join(checkpoint_save_path, file))
 
-                save_name = "best_model-episode_[{:}]-macrof1s_[{:.2f}].checkpoint".format(episode, overall_f1_s)
+                save_name = "best_model-episode_[{:}]-macroaccs_[{:.2f}].checkpoint".format(episode, overall_acc_s)
 
                 with open(os.path.join(checkpoint_save_path, save_name), 'wb') as f:
 
                     torch.save(model_init.state_dict(), f)
 
                 print(f"New best macro F1. Saving model as {save_name}\n")
-                best_overall_f1_s = overall_f1_s
+                best_overall_acc_s = overall_acc_s
                 curr_patience = args['patience']
             else:
                 if episode > args['min_episodes']:
                     curr_patience -= 1
-                print(f"Model did not improve with macrof1s_={overall_f1_s}. Patience is now {curr_patience}\n")
+                print(f"Model did not improve with macroaccs_={overall_acc_s}. Patience is now {curr_patience}\n")
 
             #######################
             # Latest Model Saving #
@@ -452,8 +458,8 @@ def train(args):
             with open(os.path.join(checkpoint_save_path, "latest_trainer.pickle"), 'wb') as f:
 
                 pickle.dump({'episode': episode,
-                             'overall_f1_s': overall_f1_s,
-                             'best_overall_f1_s': best_overall_f1_s,
+                             'overall_acc_s': overall_acc_s,
+                             'best_overall_acc_s': best_overall_acc_s,
                              'curr_patience': curr_patience},
                             f)
 
@@ -468,7 +474,7 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--include', default=['go_emotions', 'crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
-                        'emotion-cause', 'grounded_emotions', 'ssec', 'tales-emotion', 'tec'], type=str, nargs='*',
+                        'emotion-cause', 'grounded_emotions', 'ssec', 'tales-emotion', 'tec'], type=str, nargs='+',
                         help='Which datasets to include. Default is all.',
                         choices=['go_emotions', 'crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
                         'emotion-cause', 'grounded_emotions', 'ssec', 'tales-emotion', 'tec'])
@@ -549,7 +555,10 @@ if __name__ == '__main__':
                         help='Name of current run version. Default is debug')
 
     # Other hyperparameters
-    parser.add_argument('--gpu', default=True, type=lambda x: bool(strtobool(x)),
+    parser.add_argument('--seed', default=610, type=int,
+                        help='Random seed.')
+
+    parser.add_argument('--gpu', default=False, type=lambda x: bool(strtobool(x)),
                         help='Whether to use a GPU.')
 
     parser.add_argument('--print_inner_loss', default=False, type=lambda x: bool(strtobool(x)),

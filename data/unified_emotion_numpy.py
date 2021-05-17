@@ -23,7 +23,7 @@ class unified_emotion():
     """Class for the 'Unified Emotion Dataset'. Data from https://github.com/sarnthil/unify-emotion-datasets.
     """
 
-    def __init__(self, file_path, include=['grounded_emotions'], split_ratio=0.8, verbose=False, first_label_only=False):
+    def __init__(self, file_path, include=['grounded_emotions'], split_ratio=[0.7, 0.15, 0.15], verbose=False, first_label_only=False):
         """
         Class for the 'Unified Emotion Dataset'.
         Data from https://github.com/sarnthil/unify-emotion-datasets.
@@ -32,7 +32,7 @@ class unified_emotion():
             file_path (str): path to the 'unified-dataset.jsonl' file
             include (list, optional): if not None, will only use the datasets in the include list. Defaults to None
             exclude (list, optional): tasks to exclude. Defaults to ['fb-valence-arousal-anon', 'emobank', 'affectivetext', 'emotion-cause', 'electoraltweets'].
-            split_ratio (float, optional): amount of data reserved for test sets. Defaults to 0.8.
+            split_ratio (list of floats, optional): amount of data reserved for test sets. Defaults to 0.8.
         """
         self.file_path = file_path
         self.include = include
@@ -62,7 +62,7 @@ class unified_emotion():
                     continue
 
                 # Give 'all' split if data doesn't have its own train/test split
-                split = 'all' if line.get('split', None) == None else line['split']
+                split = 'all' #if line.get('split', None) == None else line['split']
 
                 # Give line a data specific id
                 id = source_lengths.get(source, 0)
@@ -119,9 +119,13 @@ class unified_emotion():
                 class_lengths = {k: len(datasets[source]['all'][k])
                                 for k in datasets[source]['all'].keys()}
                 for c, l in class_lengths.items():
-                    train_l = int(self.split_ratio * l)
+                    train_l = int(self.split_ratio[0] * l)
+                    valid_l = int(self.split_ratio[1] * l)
+
                     datasets[source]['train'][c] = datasets[source]['all'][c][:train_l]
-                    datasets[source]['test'][c] = datasets[source]['all'][c][train_l:]
+                    datasets[source]['validation'][c] = datasets[source]['all'][c][train_l:(
+                        train_l + valid_l)]
+                    datasets[source]['test'][c] = datasets[source]['all'][c][(train_l + valid_l):]
 
                 del datasets[source]['all']
 
@@ -137,14 +141,15 @@ class unified_emotion():
             n_classes = len(datasets[source]['train'].keys())
             for c in datasets[source]['train'].keys():
                 train_size = len(datasets[source]['train'][c])
+                valid_size = len(datasets[source]['validation'][c])
                 test_size = len(datasets[source]['test'][c])
 
-                keep = (train_size >= 96 and test_size >= 64)
+                keep = (train_size >= 96 and valid_size >= 64 and test_size >= 64)
 
                 if (not keep):
                     if self.verbose:
-                        print("Removed {:}/{:} for too little data |train|={}, |test|={}".
-                            format(source, c, train_size, test_size))
+                        print("Removed {:}/{:} for too little data |train|={}, |valid|={}, |test|={}".
+                            format(source, c, train_size, valid_size, test_size))
                         #self.inv_label_map[source][c]
                     total_removed += 1
                     total_data_removed += train_size + test_size
@@ -155,6 +160,7 @@ class unified_emotion():
 
         for source, c in removing:
             del datasets[source]['train'][c]
+            del datasets[source]['validation'][c]
             del datasets[source]['test'][c]
 
         if self.verbose:

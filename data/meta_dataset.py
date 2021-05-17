@@ -6,7 +6,7 @@ class meta_dataset():
     def __init__(self, unified_file_path="./data/datasets/unified-dataset.jsonl",
                  include=['crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
                           'emotion-cause', 'grounded_emotions', 'ssec', 'tec', 'go_emotions'],
-                 split_ratio=0.8, verbose=False, first_label_only=False):
+                 split_ratio=[0.7, 0.15, 0.15], verbose=False, first_label_only=False):
 
         self.unified = unified_emotion(unified_file_path,
                                        include=include,
