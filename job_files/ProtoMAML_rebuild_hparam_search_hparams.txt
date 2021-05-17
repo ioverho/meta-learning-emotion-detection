@@ -1,0 +1,15 @@
+--version default --output_lr 1e-1 --inner_lr 1e-3 --meta_lr 1e-5 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-2_meta-lr_1e-5 --output_lr 1e-1 --inner_lr 1e-2 --meta_lr 1e-5 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-4_meta-lr_1e-5 --output_lr 1e-1 --inner_lr 1e-4 --meta_lr 1e-5 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-3_meta-lr_1e-4 --output_lr 1e-1 --inner_lr 1e-3 --meta_lr 1e-4 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-2_meta-lr_1e-4 --output_lr 1e-1 --inner_lr 1e-2 --meta_lr 1e-4 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-4_meta-lr_1e-4 --output_lr 1e-1 --inner_lr 1e-4 --meta_lr 1e-4 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-3_meta-lr_1e-3 --output_lr 1e-1 --inner_lr 1e-3 --meta_lr 1e-3 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-2_meta-lr_1e-3 --output_lr 1e-1 --inner_lr 1e-2 --meta_lr 1e-3 --n_inner 5 --n_outer 16 --dropout False
+--version inner_lr_1e-4_meta-lr_1e-3 --output_lr 1e-1 --inner_lr 1e-4 --meta_lr 1e-3 --n_inner 5 --n_outer 16 --dropout False
+--version n_inner_7_n_outer_16 --output_lr 1e-1 --inner_lr 1e-3 --meta_lr 1e-5 --n_inner 7 --n_outer 16 --dropout False
+--version n_inner_5_n_outer_16 --output_lr 1e-1 --inner_lr 1e-4 --meta_lr 1e-3 --n_inner 5 --n_outer 8 --dropout False
+--version n_inner_7_n_outer_8 --output_lr 1e-1 --inner_lr 1e-3 --meta_lr 1e-5 --n_inner 7 --n_outer 8 --dropout False
+--version n_inner_5_n_outer_24 --output_lr 1e-1 --inner_lr 1e-4 --meta_lr 1e-3 --n_inner 5 --n_outer 24 --dropout False
+--version n_inner_7_n_outer_24 --output_lr 1e-1 --inner_lr 1e-3 --meta_lr 1e-5 --n_inner 7 --n_outer 24 --dropout False
+--version dropout_True --output_lr 1e-1 --inner_lr 1e-3 --meta_lr 1e-5 --n_inner 5 --n_outer 16 --dropout True

@@ -445,11 +445,11 @@ def train(args):
             #######################
             for file in os.listdir(checkpoint_save_path):
                 if 'latest_model' in file:
-                    ep = re.match(r".+episode_\[(.+)\].+", file)
+                    ep = re.match(r".+episode_\[([a-zA-Z0-9\.]+)\].+", file)
                     if ep != None and int(ep.group(1)) <= episode:
                         os.remove(os.path.join(checkpoint_save_path, file))
 
-            save_name = "latest_model-episode_[{:}]-macrof1s_[{:.2f}].checkpoint".format(episode, overall_f1_s)
+            save_name = "latest_model-episode_[{:}]-macroaccs_[{:.2f}].checkpoint".format(episode, overall_acc_s)
 
             with open(os.path.join(checkpoint_save_path, save_name), 'wb') as f:
 
@@ -493,7 +493,7 @@ if __name__ == '__main__':
     parser.add_argument('--nu', default=5, type=int,
                         help='Number of levels of the model to freeze. Default is 12')
 
-    parser.add_argument('--dropout', default=False,
+    parser.add_argument('--dropout', default=False, type=lambda x: bool(strtobool(x)),
                         help='Whether or not to apply dropout in BERT during training. Default is False')
 
     # Data loader hyperparameters

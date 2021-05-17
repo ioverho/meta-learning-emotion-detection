@@ -1,0 +1,37 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu_titanrtx_shared_course
+#SBATCH --gres=gpu:1
+#SBATCH --job-name=ProtoMAML-MetaEmotion-HParamSearch
+#SBATCH --cpus-per-task=3
+#SBATCH --time=36:00:00
+#SBATCH --mem=48000M
+#SBATCH --mail-user=ivo.onno.verhoeven@gmail.com
+#SBATCH --output=./checkpoints/ProtoMAMLHParam/%A.out # STDOUT
+#SBATCH --ntasks=1
+#SBATCH --array=1-16%1
+
+module purge
+module load 2019
+module load Python/3.7.5-foss-2019b
+module load Anaconda3/2018.12
+
+# Your job starts in the directory where you call sbatch
+cd $HOME/MetaEmotion
+
+# Activate your environment
+source activate atcs
+
+# Hyper-parameters file
+HPARAMS_FILE=$HOME/MetaEmotion/ProtoMAML_rebuild_hparam_search_hparams.txt
+
+# Run your code
+srun python -u ProtoMAML_rebuild_train.py --gpu True\
+    $(head -$SLURM_ARRAY_TASK_ID $HPARAMS_FILE | tail -1)\
+    --include go_emotions\
+    --encoder_name bert-base-uncased --nu 5\
+    --k 4 --max_classes 8 --subset_classes True --max_batch_size 32\
+    --n_eval_per_task 100 --eval_every_n 2500\
+    --max_episodes 2500 --min_episodes 2500\
+    --warmup_steps 100 --clip_val 5.0 --checkpoint_path ./checkpoints/ProtoMAMLHParam\
+    --seed 610 --gpu True
