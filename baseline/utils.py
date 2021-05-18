@@ -1,5 +1,6 @@
 # imports
 import os
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import RandomSampler
@@ -10,6 +11,7 @@ import transformers
 from transformers import BertTokenizer
 from transformers import AdamW
 from transformers.data.data_collator import DataCollatorWithPadding
+from datasets import concatenate_datasets
 
 # own imports
 from models.custombert import CustomBERT
@@ -63,16 +65,28 @@ def initialize_model(args, device, tokenizer, num_classes):
     return model, optimizer
 
 
-def create_dataloader(args, dataset, tokenizer):
+def create_dataloader(args, dataset, tokenizer, k_shot=False, num_classes=None):
     """
     Function to create a PyTorch Dataloader from a given dataset.
     Inputs:
         args - Namespace object from the argument parser
         dataset - Dataset to convert to Dataloader
         tokenizer - BERT tokenizer instance
+        k_shot - Indicates whether to make the training set k-shot. Default is False
+        num_classes - Number of classes in the dataset. Default is None
     Outputs:
         dataset - DataLoader object of the dataset
     """
+
+    # check if k-shot
+    new_dataset = []
+    if k_shot:
+        for current_class in range(0, num_classes):
+            class_set = dataset.filter(lambda example: example['labels'] == current_class)
+            class_set = class_set.shuffle()
+            class_set = class_set.filter(lambda e, i: i<args.k, with_indices=True)
+            new_dataset.append(class_set)
+        dataset = concatenate_datasets(new_dataset)
 
     # create a data collator function
     data_collator = DataCollatorWithPadding(tokenizer)
@@ -149,3 +163,45 @@ def handle_epoch_metrics(step_metrics, epoch_labels, epoch_predictions):
 
     # return the epoch dictionary
     return epoch_metrics
+
+
+def average_evaluation_results(eval_metrics):
+    """
+    Function creates the average results over the evaluation runs.
+    Inputs:
+        eval_metrics - Dictionary containing the evaluation results
+    Outputs:
+        average_merics - Dictionary containing the averaged evaluation results
+    """
+
+    average_metrics = {}
+
+    # loop over the different datasets
+    for dataset_key in eval_metrics:
+        dataset_results = eval_metrics[dataset_key]
+        all_acc = []
+        all_f1 = []
+
+        # loop over the runs of the dataset
+        for run_key in dataset_results:
+            run_results = dataset_results[run_key]
+            all_acc.append(run_results['testing']['accuracy'])
+            all_f1.append(run_results['testing']['f1'])
+
+        # average the metrics
+        dataset_average = {}
+        dataset_average['accuracy'] = {}
+        dataset_average['accuracy']['mean'] = np.mean(all_acc, axis=0)
+        dataset_average['accuracy']['std'] = np.std(all_acc, axis=0)
+        dataset_average['accuracy']['min'] = np.min(all_acc, axis=0)
+        dataset_average['accuracy']['max'] = np.max(all_acc, axis=0)
+        dataset_average['f1'] = {}
+        dataset_average['f1']['mean'] = np.mean(all_f1, axis=0).tolist()
+        f1_min = np.min(all_f1, axis=0)
+        f1_max = np.max(all_f1, axis=0)
+        dataset_average['f1']['min'] = f1_min if isinstance(f1_min, list) else f1_min.tolist()
+        dataset_average['f1']['max'] = f1_max if isinstance(f1_max, list) else f1_max.tolist()
+        average_metrics[dataset_key] = dataset_average
+
+    # return the average evaluation results
+    return average_metrics

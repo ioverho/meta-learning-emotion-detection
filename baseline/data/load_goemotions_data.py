@@ -73,13 +73,14 @@ def PrepareSets(args, tokenizer, train_set, dev_set, test_set, first_label=False
     return train_set, dev_set, test_set
 
 
-def LoadGoEmotions(args, tokenizer, first_label=False):
+def LoadGoEmotions(args, tokenizer, first_label=False, k_shot=False):
     """
     Function to load the GoEmotions dataset.
     Inputs:
         args - Namespace object from the argument parser
         tokenizer - BERT tokenizer instance
         first_label - Indicates whether to only use the first label. Default is False
+        k_shot - Indicates whether to make the training set k-shot. Default is False
     Outputs:
         train_set - Training dataset
         dev_set - Development dataset
@@ -91,7 +92,7 @@ def LoadGoEmotions(args, tokenizer, first_label=False):
 
     # function that encodes the text
     def encode_text(batch):
-        tokenized_batch = tokenizer('[CLS] ' + batch['text'] + ' [SEP]', padding=True, truncation=True)
+        tokenized_batch = tokenizer(batch['text'], padding=True, truncation=True)
         return tokenized_batch
 
     # tokenize the dataset
@@ -105,6 +106,10 @@ def LoadGoEmotions(args, tokenizer, first_label=False):
 
     # prepare the data
     train_set, dev_set, test_set = PrepareSets(args, tokenizer, train_set, dev_set, test_set, first_label)
+
+    # check if k-shot
+    if k_shot:
+        return train_set, test_set, 27
 
     # create dataloaders for the datasets
     train_set = create_dataloader(args, train_set, tokenizer)

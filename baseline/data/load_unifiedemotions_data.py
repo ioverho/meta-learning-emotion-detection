@@ -90,7 +90,7 @@ def PrepareSets(args, tokenizer, label_dict, train_set, dev_set, test_set, first
     return train_set, dev_set, test_set
 
 
-def LoadUnifiedEmotions(args, tokenizer, target_dataset, path="./data/datasets/unified-dataset.jsonl"):
+def LoadUnifiedEmotions(args, tokenizer, target_dataset, path="./data/datasets/unified-dataset.jsonl", k_shot=False):
     """
     Function to load the UnifiedEmotions dataset.
     Inputs:
@@ -98,6 +98,7 @@ def LoadUnifiedEmotions(args, tokenizer, target_dataset, path="./data/datasets/u
         tokenizer - BERT tokenizer instance
         target_dataset - String representing the dataset to load
         path - Path to the unified dataset jsonl file
+        k_shot - Indicates whether to make the training set k-shot. Default is False
     Outputs:
         train_set - Training dataset
         dev_set - Development dataset
@@ -112,7 +113,7 @@ def LoadUnifiedEmotions(args, tokenizer, target_dataset, path="./data/datasets/u
 
     # function that encodes the text
     def encode_text(batch):
-        tokenized_batch = tokenizer('[CLS] ' + batch['text'] + ' [SEP]', padding=True, truncation=True)
+        tokenized_batch = tokenizer(batch['text'], padding=True, truncation=True)
         return tokenized_batch
 
     # tokenize the dataset
@@ -146,6 +147,10 @@ def LoadUnifiedEmotions(args, tokenizer, target_dataset, path="./data/datasets/u
 
     # prepare the data
     train_set, dev_set, test_set = PrepareSets(args, tokenizer, label_dict, train_set, dev_set, test_set)
+
+    # check if k-shot
+    if k_shot:
+        return train_set, test_set, len(label_dict)
 
     # create dataloaders for the datasets
     train_set = create_dataloader(args, train_set, tokenizer)

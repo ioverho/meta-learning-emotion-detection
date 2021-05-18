@@ -28,6 +28,7 @@ class CustomBERT(nn.Module):
 
     def replace_clf(self, num_classes):
         # replace the clf with a new final clf which has new number of classes
+        self.num_classes = num_classes
         self.clf = nn.Linear(in_features=self.mlp.out_dim, out_features=self.num_classes)
 
     def forward(self, input_ids, attention_mask, labels, token_type_ids):
