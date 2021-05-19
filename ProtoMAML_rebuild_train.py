@@ -101,7 +101,7 @@ def train(args):
         prototypes = torch.stack([torch.mean(y[support_labels == c], dim=0) for c in labs])
 
         W_init = 2 * prototypes
-        b_init = -torch.norm(prototypes, p=2, dim=1)
+        b_init = -torch.norm(prototypes, p=2, dim=1)**2
 
         W_task, b_task = W_init.detach(), b_init.detach()
         W_task.requires_grad, b_task.requires_grad = True, True
@@ -219,8 +219,13 @@ def train(args):
     tokenizer.add_special_tokens({'additional_special_tokens': specials()})
     model_init.encoder.model.resize_token_embeddings(len(tokenizer.vocab))
 
-    meta_optimizer = optim.SGD(model_init.parameters(), lr=args['meta_lr'])
+    meta_optimizer = optim.Adam(model_init.parameters(), lr=args['meta_lr'])
     meta_scheduler = get_constant_schedule_with_warmup(meta_optimizer, args['warmup_steps'])
+    reduceOnPlateau = optim.lr_scheduler.ReduceLROnPlateau(meta_optimizer, mode='max',
+                                                           factor=args['lr_reduce_factor'],
+                                                           patience=args['patience'],
+                                                           verbose=True)
+
 
     model_init = model_init.to(device)
 
@@ -432,7 +437,7 @@ def train(args):
 
                     torch.save(model_init.state_dict(), f)
 
-                print(f"New best macro F1. Saving model as {save_name}\n")
+                print(f"New best scaled accuracy. Saving model as {save_name}\n")
                 best_overall_acc_s = overall_acc_s
                 curr_patience = args['patience']
             else:
@@ -463,9 +468,15 @@ def train(args):
                              'curr_patience': curr_patience},
                             f)
 
-            if curr_patience <= 0:
-                print("Patience spent.\nEarly stopping.")
-                break
+            if episode >= args['min_episodes']:
+                reduceOnPlateau.step(overall_acc_s)
+
+                curr_lr = meta_optimizer.param_groups[0]['lr']
+                if curr_lr < args['min_meta_lr']:
+                    print("Patience spent.\nEarly stopping.")
+                    raise KeyboardInterrupt
+
+        writer.add_scalar('Meta-lr', meta_optimizer.param_groups[0]['lr'], episode)
 
 
 # command line arguments parsing
@@ -473,8 +484,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--include', default=['go_emotions', 'crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
-                        'emotion-cause', 'grounded_emotions', 'ssec', 'tales-emotion', 'tec'], type=str, nargs='+',
+    parser.add_argument('--include', default=['grounded_emotions'], type=str, nargs='+',
                         help='Which datasets to include. Default is all.',
                         choices=['go_emotions', 'crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
                         'emotion-cause', 'grounded_emotions', 'ssec', 'tales-emotion', 'tec'])
@@ -519,20 +529,18 @@ if __name__ == '__main__':
     parser.add_argument('--min_episodes', default=2500, type=int,
                         help='Minimum number of episodes. Default is 2500')
 
-    parser.add_argument('--max_episodes', default=10000, type=int,
+    parser.add_argument('--max_episodes', default=3, type=int,
                         help='Maximum number of episodes. Default is 10000')
 
-    parser.add_argument('--eval_every_n', type=int, default=500,
+    parser.add_argument('--eval_every_n', type=int, default=1,
                         help='Number of episodes per evaluation loop.')
 
-    parser.add_argument('--n_eval_per_task', type=int, default=25,
+    parser.add_argument('--n_eval_per_task', type=int, default=1,
                         help='Number of support sets to evaluate on for a single task.')
 
-    parser.add_argument('--patience', default=3, type=int,
-                        help='Maximum number of evals without improvement before early stopping. Default is 3')
 
     # Optimizer hyperparameters
-    parser.add_argument('--meta_lr', default=5e-5, type=float,
+    parser.add_argument('--meta_lr', default=1e-4, type=float,
                         help='Meta learning rate to use. Default is 1e-4')
 
     parser.add_argument('--inner_lr', default=1e-3, type=float,
@@ -546,6 +554,15 @@ if __name__ == '__main__':
 
     parser.add_argument('--clip_val', default=5.0, type=float,
                         help='Value to clip the gradient with. Default is 5.0')
+
+    parser.add_argument('--patience', default=1, type=int,
+                        help='Maximum number of evals without improvement before reducing lr learning rate. Default is 1')
+
+    parser.add_argument('--lr_reduce_factor', default=0.1, type=float,
+                        help='Meta-learning rate reduction on platuea.')
+
+    parser.add_argument('--min_meta_lr', default=1e-6, type=float,
+                        help='Learning rate under which early stopping is induced.')
 
     # Saving hyperparameters
     parser.add_argument('--checkpoint_path', default='./checkpoints/ProtoMAMLv2', type=str,
