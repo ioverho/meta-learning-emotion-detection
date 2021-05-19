@@ -42,3 +42,9 @@ class CustomBERT(nn.Module):
 
         # return the predictions and the loss
         return y, loss
+
+    def encode(self, text):
+        y = self.encoder(text)
+        y = self.mlp(y)
+
+        return y

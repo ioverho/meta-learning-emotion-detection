@@ -219,7 +219,8 @@ def train(args):
     tokenizer.add_special_tokens({'additional_special_tokens': specials()})
     model_init.encoder.model.resize_token_embeddings(len(tokenizer.vocab))
 
-    meta_optimizer = optim.Adam(model_init.parameters(), lr=args['meta_lr'])
+    #meta_optimizer = optim.Adam(model_init.parameters(), lr=args['meta_lr'])
+    meta_optimizer = optim.SGD(model_init.parameters(), lr=args['meta_lr'])
     meta_scheduler = get_constant_schedule_with_warmup(meta_optimizer, args['warmup_steps'])
     reduceOnPlateau = optim.lr_scheduler.ReduceLROnPlateau(meta_optimizer, mode='max',
                                                            factor=args['lr_reduce_factor'],
@@ -540,7 +541,7 @@ if __name__ == '__main__':
 
 
     # Optimizer hyperparameters
-    parser.add_argument('--meta_lr', default=1e-4, type=float,
+    parser.add_argument('--meta_lr', default=1e-5, type=float,
                         help='Meta learning rate to use. Default is 1e-4')
 
     parser.add_argument('--inner_lr', default=1e-3, type=float,

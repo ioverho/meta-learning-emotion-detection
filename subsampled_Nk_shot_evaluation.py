@@ -4,6 +4,8 @@ import pickle
 import argparse
 import re
 from distutils.util import strtobool
+from collections import defaultdict
+import re
 
 import numpy as np
 import psutil
@@ -15,7 +17,8 @@ from transformers import AutoTokenizer, get_constant_schedule_with_warmup
 from torch.utils.tensorboard import SummaryWriter
 
 from models.seqtransformer import SeqTransformer
-from data.meta_dataset import meta_dataset
+from baseline.models.custombert import CustomBERT
+from data.meta_dataset import meta_dataset, task_label_dict
 from data.utils.tokenizer import manual_tokenizer, specials
 from data.utils.data_loader_numpy import StratifiedLoader, StratifiedLoaderwClassesSubset
 from data.utils.sampling import dataset_sampler
@@ -58,7 +61,7 @@ def eval(args):
 
         return dataloader
 
-    def _adapt_and_fit(support_labels_list, support_input_list, query_labels_list, query_input_list, loss_fn, model_init, args):
+    def _adapt_and_fit(support_labels_list, support_input_list, query_labels_list, query_input_list, loss_fn, model_init, args, mode):
         """
         Adapts the init model to a support set and computes loss on query set.
 
@@ -89,7 +92,10 @@ def eval(args):
         with torch.no_grad():
             prototypes = 0.0
             for support_labels, support_input in zip(support_labels_list, support_input_list):
-                y = model_init(support_input)
+                if mode != "baseline":
+                    y = model_init(support_input)
+                else:
+                    y = model_init.encode(support_input)
 
                 labs = torch.sort(torch.unique(support_labels))[0]
                 prototypes += torch.stack([torch.mean(y[support_labels == c], dim=0) for c in labs])
@@ -97,7 +103,7 @@ def eval(args):
             prototypes = prototypes / len(support_labels_list)
 
             W_init = 2 * prototypes
-            b_init = -torch.norm(prototypes, p=2, dim=1)
+            b_init = -torch.norm(prototypes, p=2, dim=1)**2
 
         W_task, b_task = W_init.detach(), b_init.detach()
         W_task.requires_grad, b_task.requires_grad = True, True
@@ -107,7 +113,11 @@ def eval(args):
         #################
         for _ in range(args['n_inner']):
             for support_labels, support_input in zip(support_labels_list, support_input_list):
-                y = model_task(support_input)
+                if mode != "baseline":
+                    y = model_task(support_input)
+                else:
+                    y = model_task.encode(support_input)
+
                 logits = F.linear(y, W_task, b_task)
 
                 inner_loss = loss_fn(logits, support_labels)
@@ -126,14 +136,17 @@ def eval(args):
                 W_task = W_task - args['output_lr'] * W_task_grad
                 b_task = b_task - args['output_lr'] * b_task_grad
 
-
         #########################
         # Validate on query set #
         #########################
         logits_list, outer_loss_list = [], []
         for query_labels, query_input in zip(query_labels_list, query_input_list):
             with torch.no_grad():
-                y = model_task(query_input)
+                if mode != "baseline":
+                    y = model_task(query_input)
+                else:
+                    y = model_task.encode(query_input)
+
                 logits = F.linear(y, W_task, b_task)
 
                 outer_loss = loss_fn(logits, query_labels)
@@ -149,14 +162,18 @@ def eval(args):
     log_dir = os.path.join(args['checkpoint_path'], args['version'])
 
     os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(os.path.join(log_dir, 'tensorboard'), exist_ok=True)
+    os.makedirs(os.path.join(log_dir, 'evaluation'), exist_ok=True)
     os.makedirs(os.path.join(log_dir, 'checkpoint'), exist_ok=True)
     #print(f"Saving models and logs to {log_dir}")
 
     checkpoint_save_path = os.path.join(log_dir, 'checkpoint')
 
-    with open(os.path.join("./", checkpoint_save_path, "hparams.pickle"), mode='rb+') as f:
-        hparams = pickle.load(f)
+    if args['mode'] != "baseline":
+        with open(os.path.join("./", checkpoint_save_path, "hparams.pickle"), mode='rb+') as f:
+            hparams = pickle.load(f)
+    else:
+        with open(os.path.join("./", args['checkpoint_path'], "hparams.pickle"), mode='rb+') as f:
+            hparams = pickle.load(f)
 
     ##########################
     # Device, Logging, Timer #
@@ -166,11 +183,10 @@ def eval(args):
 
     timer = Timer()
 
-    device = torch.device('cuda' if (
-        torch.cuda.is_available() and args['gpu']) else 'cpu')
+    device = torch.device('cuda' if (torch.cuda.is_available() and args['gpu']) else 'cpu')
 
     # Build the tensorboard writer
-    writer = SummaryWriter(os.path.join(log_dir, 'tensorboard'))
+    writer = SummaryWriter(os.path.join(log_dir, 'evaluation'))
 
     ###################
     # Load in dataset #
@@ -183,8 +199,12 @@ def eval(args):
     ####################
     # Init models etc. #
     ####################
-    model_init = SeqTransformer(hparams)
-    tokenizer = AutoTokenizer.from_pretrained(hparams['encoder_name'])
+    if args['mode'] != "baseline":
+        model_init = SeqTransformer(hparams)
+        tokenizer = AutoTokenizer.from_pretrained(hparams['encoder_name'])
+    else:
+        model_init = CustomBERT(num_classes=task_label_dict[args['version']])
+        tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
 
     tokenizer.add_special_tokens({'additional_special_tokens': specials()})
     model_init.encoder.model.resize_token_embeddings(len(tokenizer.vocab))
@@ -194,7 +214,21 @@ def eval(args):
             fp = os.path.join(checkpoint_save_path, file)
             with open(fp, mode='rb+') as f:
                 print(f"Found pre-trained file at {fp}")
-                model_init.load_state_dict(torch.load(f))
+                if args['mode'] != "baseline":
+                    model_init.load_state_dict(torch.load(f, map_location=device))
+
+                    for name, param in model_init.encoder.model.named_parameters():
+                        transformer_layer = re.search("(?:encoder/.layer/.)([0-9]+)", name)
+                        if transformer_layer and (int(transformer_layer.group(1)) > args['nu']):
+                            param.requires_grad = True
+                        elif 'pooler' in name:
+                            param.requires_grad = False
+                        elif args['nu'] < 0:
+                            param.requires_grad = True
+                        else:
+                            param.requires_grad = False
+                else:
+                    model_init.load_state_dict(torch.load(f, map_location=device)["bert_state_dict"])
 
     model_init = model_init.to(device)
 
@@ -203,6 +237,8 @@ def eval(args):
     ##############
     # Evaluation #
     ##############
+
+    results_dict = defaultdict(dict)
 
     for split in args['splits']:
 
@@ -218,9 +254,8 @@ def eval(args):
             task_loss, task_acc, task_f1 = [], [], []
             task_loss_s, task_acc_s, task_f1_s = [], [], []
             for _ in range(args['n_eval_per_task']):
-                dataloader = StratifiedLoaderwClassesSubset(datasubset, k=args['k'],
-                                                            tokenizer=tokenizer,
-                                                            max_batch_size=args['max_batch_size'])
+                dataloader = _get_dataloader(datasubset, tokenizer, device,
+                                             args, subset_classes=args['subset_classes'])
 
                 total_size = args['k'] * dataloader.n_classes
                 n_sub_batches = total_size / args['max_batch_size']
@@ -253,7 +288,7 @@ def eval(args):
 
                 logits_list, loss_list = _adapt_and_fit(support_labels_list, support_input_list,
                                                         query_labels_list, query_input_list,
-                                                        loss_fn, model_init, hparams)
+                                                        loss_fn, model_init, hparams, args['mode'])
 
 
                 for logits, query_labels, loss in zip(logits_list, query_labels_list, loss_list):
@@ -300,6 +335,15 @@ def eval(args):
 
             writer.flush()
 
+            results_dict[task][split] = {
+                "loss": "{:.2f} ({:.2f})".format(overall_loss[-1], np.std(task_loss)),
+                "acc": "{:.2f} ({:.2f})".format(overall_acc[-1], np.std(task_acc)),
+                "f1": "{:.2f} ({:.2f})".format(overall_f1[-1], np.std(task_f1)),
+                "loss_scaled": "{:.2f} ({:.2f})".format(overall_loss_s[-1], np.std(task_loss_s)),
+                "acc_scaled": "{:.2f} ({:.2f})".format(overall_acc_s[-1], np.std(task_acc_s)),
+                "f1_scaled": "{:.2f} ({:.2f})".format(overall_f1_s[-1], np.std(task_f1_s)),
+            }
+
         #######################
         # All Tasks Aggregate #
         #######################
@@ -328,13 +372,15 @@ def eval(args):
 
         writer.flush()
 
+    with open(os.path.join(log_dir, 'evaluation', 'results.pickle'), 'wb+') as file:
+        pickle.dump(results_dict, file)
+
 # command line arguments parsing
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('--include', default=['go_emotions', 'crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
-                        'emotion-cause', 'grounded_emotions', 'ssec', 'tales-emotion', 'tec'], type=str, nargs='+',
+    parser.add_argument('--include', default=['crowdflower', 'go_emotions'], type=str, nargs='+',
                         help='Which datasets to include. Default is all.',
                         choices=['go_emotions', 'crowdflower', 'dailydialog', 'electoraltweets', 'emoint',
                         'emotion-cause', 'grounded_emotions', 'ssec', 'tales-emotion', 'tec'])
@@ -364,13 +410,19 @@ if __name__ == '__main__':
                         help='Number of support sets to evaluate on for a single task.')
 
     # Saving hyperparameters
-    parser.add_argument('--checkpoint_path', default='./checkpoints/ProtoMAMLHParam', type=str,
+    parser.add_argument('--checkpoint_path', default='./checkpoints/Baselines', type=str,
                         help='Path where to store the checkpoint. Default is ./checkpoints/ProtoMAML_Rebuild')
 
-    parser.add_argument('--version', default='default', type=str,
+    parser.add_argument('--version', default='crowdflower', type=str,
                         help='Name of current run version. Default is debug')
 
+    parser.add_argument('--mode', default='baseline', type=str,
+                        help='Whether or not to evaluate baseline models.')
+
     # Other hyperparameters
+    parser.add_argument('--nu', default=5, type=int,
+                        help='Random seed.')
+
     parser.add_argument('--seed', default=610, type=int,
                         help='Random seed.')
 
