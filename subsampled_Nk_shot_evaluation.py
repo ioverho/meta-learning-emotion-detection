@@ -162,7 +162,7 @@ def eval(args):
     log_dir = os.path.join(args['checkpoint_path'], args['version'])
 
     os.makedirs(log_dir, exist_ok=True)
-    os.makedirs(os.path.join(log_dir, 'evaluation'), exist_ok=True)
+    os.makedirs(os.path.join(log_dir, args['save_version']), exist_ok=True)
     os.makedirs(os.path.join(log_dir, 'checkpoint'), exist_ok=True)
     #print(f"Saving models and logs to {log_dir}")
 
@@ -186,7 +186,7 @@ def eval(args):
     device = torch.device('cuda' if (torch.cuda.is_available() and args['gpu']) else 'cpu')
 
     # Build the tensorboard writer
-    writer = SummaryWriter(os.path.join(log_dir, 'evaluation'))
+    writer = SummaryWriter(os.path.join(log_dir, args['save_version']))
 
     ###################
     # Load in dataset #
@@ -372,7 +372,7 @@ def eval(args):
 
         writer.flush()
 
-    with open(os.path.join(log_dir, 'evaluation', 'results.pickle'), 'wb+') as file:
+    with open(os.path.join(log_dir, args['save_version'], 'results.pickle'), 'wb+') as file:
         pickle.dump(results_dict, file)
 
 # command line arguments parsing
@@ -434,6 +434,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--print_scaled', default=True, type=lambda x: bool(strtobool(x)),
                         help='Whether or not to print metrics scaled to random. Default is True.')
+
+    parser.add_argument('--save_version', default="evaluation_limitedProtoMAML_k4", type=str,
+                        help='What directory to save the evaluation results under.')
 
     # Parse the arguments
     args = parser.parse_args()

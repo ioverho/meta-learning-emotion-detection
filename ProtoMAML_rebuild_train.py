@@ -219,8 +219,11 @@ def train(args):
     tokenizer.add_special_tokens({'additional_special_tokens': specials()})
     model_init.encoder.model.resize_token_embeddings(len(tokenizer.vocab))
 
-    #meta_optimizer = optim.Adam(model_init.parameters(), lr=args['meta_lr'])
-    meta_optimizer = optim.SGD(model_init.parameters(), lr=args['meta_lr'])
+    if args['optimizer'] == "Adam":
+        meta_optimizer = optim.Adam(model_init.parameters(), lr=args['meta_lr'])
+    elif args['optimizer'] == "SGD":
+        meta_optimizer = optim.SGD(model_init.parameters(), lr=args['meta_lr'])
+
     meta_scheduler = get_constant_schedule_with_warmup(meta_optimizer, args['warmup_steps'])
     reduceOnPlateau = optim.lr_scheduler.ReduceLROnPlateau(meta_optimizer, mode='max',
                                                            factor=args['lr_reduce_factor'],
@@ -312,7 +315,9 @@ def train(args):
 
         meta_optimizer.step()
         meta_scheduler.step()
-        meta_optimizer.zero_grad()
+
+        if args['warmup_steps'] <= episode + 1:
+            meta_optimizer.zero_grad()
 
         #####################
         # Aggregate Logging #
@@ -541,6 +546,10 @@ if __name__ == '__main__':
 
 
     # Optimizer hyperparameters
+    parser.add_argument('--optimizer', default="SGD", type=str,
+                        choices=['Adam', 'SGD'],
+                        help='Meta model optimizer to use.')
+
     parser.add_argument('--meta_lr', default=1e-5, type=float,
                         help='Meta learning rate to use. Default is 1e-4')
 
