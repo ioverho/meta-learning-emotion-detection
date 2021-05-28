@@ -93,6 +93,7 @@ class StratifiedLoader():
                                         self.tokenizer, self.device)
         else:
             return support_labels, support_text, query_labels, query_text
+
 class StratifiedLoaderwClassesSubset():
     def __init__(self, data_subset, k, max_classes=8, tokenizer=None, device=None, shuffle=True, max_batch_size=None, verbose=False):
         """

@@ -240,7 +240,6 @@ def train(args):
     #################
 
     best_overall_acc_s = 0.0
-    curr_patience = args['patience']
 
     for episode in range(1, args['max_episodes']+1):
 
@@ -341,7 +340,7 @@ def train(args):
         ##############
         # Evaluation #
         ##############
-        if (episode % args['eval_every_n']) == 0:
+        if (episode % args['eval_every_n']) == 0 or episode==1:
 
             overall_loss, overall_acc, overall_f1 = [], [], []
             overall_loss_s, overall_acc_s, overall_f1_s = [], [], []
@@ -416,7 +415,6 @@ def train(args):
                 overall_acc_s if args['print_scaled'] else overall_acc,
                 overall_f1_s if args['print_scaled'] else overall_f1))
 
-
             writer.add_scalar('Loss/MacroEval', overall_loss, episode)
             writer.add_scalar('Accuracy/MacroEval', overall_acc, episode)
             writer.add_scalar('F1/MacroEval', overall_f1, episode)
@@ -449,7 +447,7 @@ def train(args):
             else:
                 if episode > args['min_episodes']:
                     curr_patience -= 1
-                print(f"Model did not improve with macroaccs_={overall_acc_s}. Patience is now {curr_patience}\n")
+                #print(f"Model did not improve with macroaccs_={overall_acc_s}. Patience is now {curr_patience}\n")
 
             #######################
             # Latest Model Saving #
@@ -470,8 +468,7 @@ def train(args):
 
                 pickle.dump({'episode': episode,
                              'overall_acc_s': overall_acc_s,
-                             'best_overall_acc_s': best_overall_acc_s,
-                             'curr_patience': curr_patience},
+                             'best_overall_acc_s': best_overall_acc_s},
                             f)
 
             if episode >= args['min_episodes']:
@@ -565,7 +562,7 @@ if __name__ == '__main__':
     parser.add_argument('--clip_val', default=5.0, type=float,
                         help='Value to clip the gradient with. Default is 5.0')
 
-    parser.add_argument('--patience', default=1, type=int,
+    parser.add_argument('--patience', default=0, type=int,
                         help='Maximum number of evals without improvement before reducing lr learning rate. Default is 1')
 
     parser.add_argument('--lr_reduce_factor', default=0.1, type=float,

@@ -218,7 +218,7 @@ def eval(args):
                     model_init.load_state_dict(torch.load(f, map_location=device))
 
                     for name, param in model_init.encoder.model.named_parameters():
-                        transformer_layer = re.search("(?:encoder/.layer/.)([0-9]+)", name)
+                        transformer_layer = re.search("(?:encoder\.layer\.)([0-9]+)", name)
                         if transformer_layer and (int(transformer_layer.group(1)) > args['nu']):
                             param.requires_grad = True
                         elif 'pooler' in name:

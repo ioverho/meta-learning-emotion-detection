@@ -34,6 +34,18 @@ class SeqTransformer(nn.Module):
 
         self.out_dim = self.mlp.out_dim
 
+    def get_device(self):
+        """
+        Hacky method for checking model device.
+        Requires all parameters to be on same device.
+        """
+        #assert next(self.model_shared.parameters()).device == next(self.model_task.parameters()).device,\
+        #    "Models' devices do not match"
+
+        self.device = next(self.encoder.parameters()).device
+
+        return self.device
+
     def forward(self, model_input):
 
         y = self.encoder(model_input)

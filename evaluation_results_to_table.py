@@ -69,9 +69,9 @@ def to_table(proto_maml_version = 'inner_lr_1e-3_meta-lr_1e-3', proto_maml_path 
         return results_table
 
 if __name__ == "__main__":
-    proto_maml_version = 'inner_lr_1e-3_meta-lr_1e-3'
-    proto_maml_path = './checkpoints/ProtoMAMLHParamv2'
-    evaluation_version = 'evaluation_limitedProtoMAML_k4_test'
+    proto_maml_version = 'full_adamv2'
+    proto_maml_path = './checkpoints/ProtoMAMLv3'
+    evaluation_version = 'evaluation_full_adamv2_k=16'
     baseline_path = './checkpoints/Baselines'
     metric = 'acc_scaled'
     split = 'test'
