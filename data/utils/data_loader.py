@@ -9,14 +9,12 @@ def _data_to_model_input(support_set, query_set, tokenizer, device):
     support_set['text'] = tokenizer(support_set['text'],
                                     return_tensors='pt',
                                     padding=True).to(device)
-    support_set['labels'] = torch.LongTensor(support_set['labels']\
-        ).to(device)
+    support_set['labels'] = torch.LongTensor(support_set['labels']).to(device)
 
     query_set['text'] = tokenizer(query_set['text'],
                                   return_tensors='pt',
                                   padding=True).to(device)
-    query_set['labels'] = torch.LongTensor(query_set['labels']\
-        ).to(device)
+    query_set['labels'] = torch.LongTensor(query_set['labels']).to(device)
 
     return support_set, query_set
 
@@ -50,6 +48,8 @@ class StratifiedLoader():
                 random.shuffle(self.data[c])
 
         self.device = device
+
+        self.n_classes = len(self.labels)
 
     def __next__(self):
 

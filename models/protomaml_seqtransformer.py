@@ -1,11 +1,14 @@
+import re
 from copy import deepcopy
 
+from memory_profiler import profile
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
 from models.seqtransformer import SeqTransformer
+from modules.mlp_clf import MLP
 
 class ProtoMAMLSeqTransformer(nn.Module):
 
@@ -18,9 +21,11 @@ class ProtoMAMLSeqTransformer(nn.Module):
         super().__init__()
 
         self.model_shared = SeqTransformer(config)
-        self.model_task = deepcopy(self.model_shared)
+        self.model_task = None
 
         self.n_inner = config['n_inner']
+        self.n_outer = config['n_outer']
+
         self.inner_lr = config['inner_lr']
         self.output_lr = config['output_lr']
         self.lossfn = config['lossfn']()
@@ -36,21 +41,31 @@ class ProtoMAMLSeqTransformer(nn.Module):
         """
 
         self.model_shared.train()
-        self.model_task.train()
+        if self.model_task != None:
+            self.model_task.train()
 
     def eval(self):
         """Set model(s) to eval.
         """
 
         self.model_shared.eval()
-        self.model_task.eval()
+        if self.model_task != None:
+            self.model_task.eval()
 
-    def device(self):
+    def get_device(self):
         """
         Hacky method for checking model device.
         Requires all parameters to be on same device.
         """
-        return next(self.model_shared.parameters()).device
+        #assert next(self.model_shared.parameters()).device == next(self.model_task.parameters()).device,\
+        #    "Models' devices do not match"
+
+        self.device = next(self.model_shared.parameters()).device
+
+        return self.device
+
+    def _get_updateable_parameters(self, model):
+        return [param for param in model.parameters() if param.requires_grad]
 
     def forward(self, model_input):
         """
@@ -103,6 +118,7 @@ class ProtoMAMLSeqTransformer(nn.Module):
 
         return W_init, b_init
 
+    #@profile
     def adapt(self, labels, model_input, task_name=None, verbose=False):
         """Perform MAML adaption with Prototypical initialization of classification layer.
 
@@ -116,19 +132,21 @@ class ProtoMAMLSeqTransformer(nn.Module):
         self.task_name = task_name
 
         # Clone model for task specific episode model
-        self.model_task = deepcopy(self.model_shared)
+        del self.model_task, self.W_task, self.b_task
+        self.model_task = deepcopy(self.model_shared)#.to(self.get_device())
+        self.model_task.zero_grad()
 
-        task_optimizer = optim.SGD(
-            self.model_task.parameters(), lr=self.inner_lr)
+        #task_optimizer = optim.SGD(self.model_task.parameters(),
+        #                           lr=self.inner_lr)
 
         # Generate initial classification weights
         W_init, b_init = self.generate_clf_weights(labels, model_input)
 
         # Detach the initial weights from task-specific model
-        self.W_task, self.b_task = W_init.detach().clone(), b_init.detach().clone()
+        self.W_task, self.b_task = W_init.detach(), b_init.detach()
         self.W_task.requires_grad, self.b_task.requires_grad = True, True
 
-        output_optimizer = optim.SGD([self.W_task, self.b_task], lr=self.output_lr)
+        #output_optimizer = optim.SGD([self.W_task, self.b_task], lr=self.output_lr)
 
         for i in range(self.n_inner):
 
@@ -136,38 +154,38 @@ class ProtoMAMLSeqTransformer(nn.Module):
             logits = self.forward(model_input)
             loss = self.lossfn(logits, labels)
 
-            # Backprop the output parameters
-            # Retrain graph for shared parameters
-            self.W_task.grad, self.b_task.grad = torch.autograd.grad(loss,\
-                [self.W_task, self.b_task], retain_graph=True)
-
-            # Calculate the gradients on shared parameters here
-            updateable_task_params = [
-                param for param in self.model_task.parameters() if param.requires_grad]
-            task_grads = torch.autograd.grad(loss, updateable_task_params)
+            # Calculate the gradients on output and task parameters here
+            task_grads = torch.autograd.grad(loss,
+                                             [self.W_task, self.b_task] +
+                                             self._get_updateable_parameters(self.model_task))
 
             # Store task-specific gradients
-            for param, grad in zip(updateable_task_params, task_grads):
+            for param, grad in zip([self.W_task, self.b_task] +
+                                   self._get_updateable_parameters(self.model_task),
+                                   task_grads):
                 param.grad = grad
 
             if self.clip_val > 0:
-                torch.nn.utils.clip_grad_norm_(updateable_task_params,
+                torch.nn.utils.clip_grad_norm_(self._get_updateable_parameters(self.model_task),
                                                self.clip_val)
 
             # Update the parameters
-            output_optimizer.step()
-            task_optimizer.step()
+            #output_optimizer.step()
+            #task_optimizer.step()
 
-            output_optimizer.zero_grad()
-            task_optimizer.zero_grad()
+            #output_optimizer.zero_grad()
+            #task_optimizer.zero_grad()
 
             if verbose:
                 print("\tInner {} | Loss {:.4E}".format(
                     i, loss.detach().item()))
 
+            del task_grads, logits, loss
+
         self.W_task = W_init + (self.W_task - W_init).detach()
         self.b_task = b_init + (self.b_task - b_init).detach()
 
+    #@profile
     def backward(self, loss):
         """Backpropagate a loss on the task-specific model to the shared model parameters
 
@@ -176,23 +194,21 @@ class ProtoMAMLSeqTransformer(nn.Module):
         """
 
         # Calculate gradients for task-specific parameters
-        updateable_task_params = [param for param in self.model_task.parameters()\
-            if param.requires_grad]
-        task_grads = torch.autograd.grad(loss, updateable_task_params,
+        task_grads = torch.autograd.grad(loss, self._get_updateable_parameters(self.model_task),
                                          retain_graph=True)
 
         # Calculate gradients for shared model parameters
-        updateable_shared_params = [param for param in self.model_shared.parameters()\
-            if param.requires_grad]
-        shared_grads = torch.autograd.grad(loss, updateable_shared_params)
+        shared_grads = torch.autograd.grad(loss, self._get_updateable_parameters(self.model_shared))
 
         # Accumulate gradients
-        for param, g_task, g_shared in zip(updateable_shared_params, task_grads, shared_grads):
+        for param, g_task, g_shared in zip(self._get_updateable_parameters(self.model_shared), task_grads, shared_grads):
             if param.grad == None:
-                param.grad = g_shared + g_task
+                param.grad = (g_shared + g_task).detach() / self.n_outer
             else:
-                param.grad += g_shared + g_task
+                param.grad += (g_shared + g_task).detach() / self.n_outer
 
         if self.clip_val > 0:
-            torch.nn.utils.clip_grad_norm_(updateable_shared_params,
+            torch.nn.utils.clip_grad_norm_(self._get_updateable_parameters(self.model_shared),
                                            self.clip_val)
+
+        del task_grads, shared_grads

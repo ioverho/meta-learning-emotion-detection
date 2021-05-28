@@ -3,6 +3,7 @@ import re
 import torch
 import torch.nn as nn
 from transformers import AutoModel
+from memory_profiler import profile
 
 class TransformerEncoder(nn.Module):
 
@@ -28,10 +29,34 @@ class TransformerEncoder(nn.Module):
             if transformer_layer and (int(transformer_layer.group(1)) > nu):
                 param.requires_grad = True
             elif 'pooler' in name:
+                param.requires_grad = False
+            elif nu < 0:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
 
+        self.out_dim = self.model.config.hidden_size
+
     def forward(self, model_input):
-        # changed mapping to list of [input_ids, attn_mask]
-        return self.model(**model_input)['pooler_output']
+
+        y = self.model(**model_input)['pooler_output']
+
+        return y
+
+class AWEEncoder(nn.Module):
+
+    def __init__(self, vocab_length, out_dim=768, padding_idx=0, freeze=True):
+
+        super().__init__()
+
+        self.embedder = nn.Embedding(num_embeddings=vocab_length,
+                                     embedding_dim=768,
+                                     padding_idx=padding_idx)
+        if freeze:
+            self.embedder.requires_grad = False
+
+        self.out_dim = out_dim
+
+    def forward(self, model_input):
+
+        return torch.mean(self.embedder(model_input['input_ids']), dim=1)
